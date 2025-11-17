@@ -1,0 +1,118 @@
+name: Build macOS App
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Verify icon exists
+      run: |
+        if [ ! -f "assets/app_icon.icns" ]; then
+          echo "Warning: app_icon.icns not found, generating from PNG..."
+          python generate_icns.py
+        fi
+        
+    - name: Build app with py2app
+      run: |
+        python setup.py py2app
+        
+    - name: Verify build
+      run: |
+        ls -lh dist/
+        if [ ! -d "dist/MTimer.app" ]; then
+          echo "Error: MTimer.app not found in dist/"
+          exit 1
+        fi
+        
+    - name: Create DMG
+      run: |
+        # Install create-dmg if needed
+        brew install create-dmg || true
+        
+        # Create DMG
+        create-dmg \
+          --volname "MTimer" \
+          --volicon "assets/app_icon.icns" \
+          --window-pos 200 120 \
+          --window-size 600 400 \
+          --icon-size 100 \
+          --icon "MTimer.app" 175 120 \
+          --hide-extension "MTimer.app" \
+          --app-drop-link 425 120 \
+          "MTimer.dmg" \
+          "dist/MTimer.app" || \
+        hdiutil create -volname MTimer -srcfolder dist/MTimer.app -ov -format UDZO MTimer.dmg
+        
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: MTimer-macOS
+        path: |
+          dist/MTimer.app
+          MTimer.dmg
+        retention-days: 30
+        
+    - name: Get version from tag
+      if: startsWith(github.ref, 'refs/tags/')
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          MTimer.dmg
+        body: |
+          ## MTimer ${{ steps.get_version.outputs.VERSION }}
+          
+          ### 🎉 Що нового
+          
+          *(Додайте опис змін тут)*
+          
+          ### 📦 Встановлення
+          
+          1. Завантажте `MTimer.dmg`
+          2. Відкрийте DMG файл
+          3. Перетягніть MTimer.app в Applications
+          4. Запустіть з Applications (перший раз: ПКМ → Відкрити)
+          
+          ### ⚙️ Вимоги
+          
+          - macOS 12.0 (Monterey) або новіше
+          - Universal binary: Intel та Apple Silicon
+          
+          ### 🔗 Посилання
+          
+          - [GitHub Repository](https://github.com/maciborka/MTimer)
+          - [Документація](https://github.com/maciborka/MTimer#readme)
+          
+          ---
+          
+          **Перевірка:** Підпис ad-hoc. Для першого запуску: ПКМ → Відкрити
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
