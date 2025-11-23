@@ -155,6 +155,7 @@ class TimeTrackerWindowController(NSObject):
         self.addProjectBtn = NSButton.alloc().initWithFrame_(NSMakeRect(590, rowY, 35, 28))
         self.addProjectBtn.setTitle_("+")
         self.addProjectBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.addProjectBtn.setButtonType_(1)  # NSMomentaryLightButton
         self.addProjectBtn.setTarget_(self)
         self.addProjectBtn.setAction_(objc.selector(self.createProject_, signature=b"v@:"))
         self.timerCard.addSubview_(self.addProjectBtn)
@@ -196,6 +197,7 @@ class TimeTrackerWindowController(NSObject):
         self.todayFilterBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX, filterY, 80, 24))
         self.todayFilterBtn.setTitle_(t('today'))
         self.todayFilterBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.todayFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton - toggle button поведение
         self.todayFilterBtn.setTarget_(self)
         self.todayFilterBtn.setAction_(objc.selector(self.setFilterToday_, signature=b"v@:"))
         content.addSubview_(self.todayFilterBtn)
@@ -203,6 +205,7 @@ class TimeTrackerWindowController(NSObject):
         self.weekFilterBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX + 85, filterY, 80, 24))
         self.weekFilterBtn.setTitle_(t('week'))
         self.weekFilterBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.weekFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton
         self.weekFilterBtn.setTarget_(self)
         self.weekFilterBtn.setAction_(objc.selector(self.setFilterWeek_, signature=b"v@:"))
         content.addSubview_(self.weekFilterBtn)
@@ -210,9 +213,19 @@ class TimeTrackerWindowController(NSObject):
         self.monthFilterBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX + 170, filterY, 80, 24))
         self.monthFilterBtn.setTitle_(t('month'))
         self.monthFilterBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.monthFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton
         self.monthFilterBtn.setTarget_(self)
         self.monthFilterBtn.setAction_(objc.selector(self.setFilterMonth_, signature=b"v@:"))
         content.addSubview_(self.monthFilterBtn)
+        
+        # Кнопка Статистика (под кнопкой "Сегодня")
+        self.statisticsBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX, filterY - 30, 120, 24))
+        self.statisticsBtn.setTitle_(t('statistics'))
+        self.statisticsBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.statisticsBtn.setButtonType_(1)  # NSMomentaryLightButton
+        self.statisticsBtn.setTarget_(self)
+        self.statisticsBtn.setAction_(objc.selector(self.openStatistics_, signature=b"v@:"))
+        content.addSubview_(self.statisticsBtn)
         
         # Поле общего времени
         self.weekTotalField = NSTextField.alloc().initWithFrame_(NSMakeRect(270, filterY + 0, 300, 20))
@@ -238,6 +251,7 @@ class TimeTrackerWindowController(NSObject):
         self.continueBtn = NSButton.alloc().initWithFrame_(NSMakeRect(width-360, continueButtonY, 140, 24))
         self.continueBtn.setTitle_(t('continue'))
         self.continueBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.continueBtn.setButtonType_(1)  # NSMomentaryLightButton - стандартная интерактивная кнопка
         self.continueBtn.setTarget_(self)
         self.continueBtn.setAction_(objc.selector(self.continueSelected_, signature=b"v@:"))
         content.addSubview_(self.continueBtn)
@@ -375,9 +389,10 @@ class TimeTrackerWindowController(NSObject):
             self.weekTotalField.setFrame_(NSMakeRect(270, filterY, 300, 20))
             self.todayTotalField.setFrame_(NSMakeRect(width-200, filterY + 2, 160, 20))
             self.continueBtn.setFrame_(NSMakeRect(width-360, filterY, 140, 24))
+            self.statisticsBtn.setFrame_(NSMakeRect(20, filterY - 30, 120, 24))
             
             # Таблица - растягивается по высоте и ширине
-            tableTopMargin = 50
+            tableTopMargin = 80  # Увеличили отступ для кнопки статистики
             tableY = 20
             tableHeight = cardY - 40 - tableTopMargin
             if tableHeight < 100:
@@ -588,15 +603,27 @@ class TimeTrackerWindowController(NSObject):
         self.monthFilterBtn.setState_(NSControlStateValueOn if self.current_filter == "month" else NSControlStateValueOff)
     
     def setFilterToday_(self, _):
-        self.current_filter = "today"
+        if self.current_filter == "today":
+            # Если уже выбрана эта кнопка - отключаем фильтр
+            self.current_filter = None
+        else:
+            self.current_filter = "today"
         self.reloadSessions()
     
     def setFilterWeek_(self, _):
-        self.current_filter = "week"
+        if self.current_filter == "week":
+            # Если уже выбрана эта кнопка - отключаем фильтр
+            self.current_filter = None
+        else:
+            self.current_filter = "week"
         self.reloadSessions()
     
     def setFilterMonth_(self, _):
-        self.current_filter = "month"
+        if self.current_filter == "month":
+            # Если уже выбрана эта кнопка - отключаем фильтр
+            self.current_filter = None
+        else:
+            self.current_filter = "month"
         self.reloadSessions()
     
     def projectSelected_(self, sender):
@@ -950,6 +977,38 @@ class TimeTrackerWindowController(NSObject):
         if s['description']:
             self.descriptionField.setStringValue_(s['description'])
         self.toggleTimer_(None)
+        
+        # Сбрасываем highlight кнопки через задержку
+        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            0.15, self, objc.selector(self.resetContinueButton_, signature=b"v@:"), None, False
+        )
+    
+    def resetContinueButton_(self, _):
+        """Сбрасывает highlight кнопки Продолжить"""
+        try:
+            self.continueBtn.highlight_(False)
+        except Exception:
+            pass
+    
+    def openStatistics_(self, _):
+        """Відкриває вікно статистики"""
+        try:
+            # Викликаємо метод з AppDelegate
+            NSApp.delegate().openStatistics_(None)
+            
+            # Сбрасываем highlight кнопки статистики через небольшую задержку
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                0.15, self, objc.selector(self.resetStatisticsButton_, signature=b"v@:"), None, False
+            )
+        except Exception as e:
+            NSLog(f"Error opening statistics: {e}")
+    
+    def resetStatisticsButton_(self, _):
+        """Сбрасывает highlight кнопки статистики"""
+        try:
+            self.statisticsBtn.highlight_(False)
+        except Exception:
+            pass
 
     def showWarning_(self, text):
         alert = NSAlert.alloc().init()
@@ -1336,6 +1395,13 @@ class AppDelegate(NSObject):
             import sys
             import os
             
+            # Отримуємо поточний фільтр та проєкт з контроллера
+            current_filter = getattr(self.controller, 'current_filter', None)
+            # Если фильтр не выбран - используем 'month' по умолчанию
+            if current_filter is None:
+                current_filter = 'month'
+            selected_project_id = getattr(self.controller, 'selected_project_id', None)
+            
             # Запускаємо статистику в окремому процесі
             # Це дозволяє вікну працювати незалежно від основного застосунку
             script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1344,13 +1410,16 @@ class AppDelegate(NSObject):
             # Створюємо скрипт для запуску статистики
             stats_script = os.path.join(script_dir, 'show_stats.py')
             
+            # Передаємо параметри як аргументи
+            args = [python_exec, stats_script, current_filter, str(selected_project_id)]
+            
             # Запускаємо в фоні
-            subprocess.Popen([python_exec, stats_script], 
+            subprocess.Popen(args, 
                            cwd=script_dir,
                            stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
             
-            NSLog("Statistics window launched in separate process")
+            NSLog(f"Statistics window launched: filter={current_filter}, project={selected_project_id}")
                 
         except Exception as e:
             NSLog(f"Statistics error: {e}")
