@@ -7,8 +7,10 @@ from Cocoa import (
     NSPopUpButton, NSTableView, NSScrollView, NSTableColumn, NSFont,
     NSMakeRect, NSTitledWindowMask, NSClosableWindowMask, NSResizableWindowMask,
     NSScreen, NSTimer, NSDate, NSTextAlignmentCenter, NSBezelStyleRounded,
-    NSAlert, NSAlertStyleWarning, NSView, NSColor, NSMenu, NSMenuItem, NSImage,
-    NSNotificationCenter, NSStatusBar, NSVariableStatusItemLength
+    NSAlert, NSAlertStyleWarning, NSAlertStyleInformational, NSView, NSColor, 
+    NSMenu, NSMenuItem, NSImage, NSNotificationCenter, NSStatusBar, 
+    NSVariableStatusItemLength, NSSavePanel, NSModalResponseOK, NSTabView,
+    NSTabViewItem
 )
 from Foundation import NSLog, NSDateFormatter, NSDateComponentsFormatter, NSBundle, NSUserNotification, NSUserNotificationCenter, NSThread
 import os
@@ -75,6 +77,9 @@ class TimeTrackerWindowController(NSObject):
             NSMakeRect(x, y, width, height), style, 2, False
         )
         self.window.setTitle_(APP_NAME)
+        
+        # Устанавливаем иконку окна
+        self._setWindowIcon(self.window)
         
         # Устанавливаем минимальный размер окна
         self.window.setMinSize_((900, 640))
@@ -1024,6 +1029,31 @@ class TimeTrackerWindowController(NSObject):
             pass
         
         alert.runModal()
+    
+    @objc.python_method
+    def _setWindowIcon(self, window):
+        """Устанавливает иконку для окна"""
+        try:
+            base = os.path.dirname(__file__)
+            candidates = [
+                os.path.join(base, "assets", "app_icon.icns"),
+                os.path.join(base, "assets", "app_icon.png"),
+            ]
+            for p in candidates:
+                if os.path.exists(p):
+                    img = NSImage.alloc().initWithContentsOfFile_(p)
+                    if img:
+                        # Устанавливаем иконку для окна
+                        try:
+                            window.setRepresentedURL_(None)
+                            button = window.standardWindowButton_(0)
+                            if button:
+                                button.setImage_(img)
+                        except:
+                            pass
+                        break
+        except Exception as e:
+            NSLog(f"Set window icon error: {e}")
 
 
 class ProjectSettingsWindowController(NSObject):
@@ -1051,8 +1081,8 @@ class ProjectSettingsWindowController(NSObject):
         # Создаём окно
         screen = NSScreen.mainScreen()
         screen_frame = screen.frame()
-        width = 500
-        height = 400
+        width = 550
+        height = 450
         x = (screen_frame.size.width - width) / 2
         y = (screen_frame.size.height - height) / 2
         
@@ -1062,24 +1092,33 @@ class ProjectSettingsWindowController(NSObject):
             2,
             False
         )
-        self.window.setTitle_(t('project_settings'))
+        self.window.setTitle_("Настройки")
         self.window.setReleasedWhenClosed_(False)
         
         content = self.window.contentView()
         
-        # Таблица проектов (верхняя часть)
-        tableY = 120
-        tableHeight = height - tableY - 20
-        scrollView = NSScrollView.alloc().initWithFrame_(NSMakeRect(20, tableY, width-40, tableHeight))
+        # Создаем TabView
+        tabView = NSTabView.alloc().initWithFrame_(NSMakeRect(10, 10, width-20, height-20))
+        
+        # Вкладка 1: Данные (Проекты)
+        dataTab = NSTabViewItem.alloc().initWithIdentifier_("data")
+        dataTab.setLabel_("Данные")
+        dataView = NSView.alloc().initWithFrame_(tabView.contentRect())
+        
+        # Таблица проектов
+        tabHeight = height - 70
+        tableY = 100
+        tableHeight = tabHeight - tableY - 20
+        scrollView = NSScrollView.alloc().initWithFrame_(NSMakeRect(20, tableY, width-60, tableHeight))
         self.tableView = NSTableView.alloc().initWithFrame_(scrollView.bounds())
         
         col1 = NSTableColumn.alloc().initWithIdentifier_("name")
-        col1.setWidth_((width-40) * 0.6)
+        col1.setWidth_((width-60) * 0.6)
         col1.headerCell().setStringValue_(t('project'))
         self.tableView.addTableColumn_(col1)
         
         col2 = NSTableColumn.alloc().initWithIdentifier_("rate")
-        col2.setWidth_((width-40) * 0.3)
+        col2.setWidth_((width-60) * 0.3)
         col2.headerCell().setStringValue_(t('rate'))
         self.tableView.addTableColumn_(col2)
         
@@ -1088,41 +1127,103 @@ class ProjectSettingsWindowController(NSObject):
         
         scrollView.setDocumentView_(self.tableView)
         scrollView.setHasVerticalScroller_(True)
-        content.addSubview_(scrollView)
+        dataView.addSubview_(scrollView)
         
-        # Поля редактирования (нижняя часть)
-        labelY = 80
-        NSTextField.labelWithString_(t('project_name') + ":").setFrame_(NSMakeRect(20, labelY, 100, 20))
-        
+        # Поля редактирования
+        labelY = 60
         label1 = NSTextField.alloc().initWithFrame_(NSMakeRect(20, labelY, 100, 20))
         label1.setStringValue_(t('project_name') + ":")
         label1.setBezeled_(False)
         label1.setDrawsBackground_(False)
         label1.setEditable_(False)
-        content.addSubview_(label1)
+        dataView.addSubview_(label1)
         
-        self.nameField = NSTextField.alloc().initWithFrame_(NSMakeRect(130, labelY, width-260, 28))
+        self.nameField = NSTextField.alloc().initWithFrame_(NSMakeRect(130, labelY, width-280, 28))
         self.nameField.setPlaceholderString_(t('project_name'))
-        content.addSubview_(self.nameField)
+        dataView.addSubview_(self.nameField)
         
         label2 = NSTextField.alloc().initWithFrame_(NSMakeRect(20, labelY - 40, 100, 20))
         label2.setStringValue_(t('hourly_rate') + ":")
         label2.setBezeled_(False)
         label2.setDrawsBackground_(False)
         label2.setEditable_(False)
-        content.addSubview_(label2)
+        dataView.addSubview_(label2)
         
         self.rateField = NSTextField.alloc().initWithFrame_(NSMakeRect(130, labelY - 40, 100, 28))
         self.rateField.setPlaceholderString_("0")
-        content.addSubview_(self.rateField)
+        dataView.addSubview_(self.rateField)
         
         # Кнопка Сохранить
-        self.saveBtn = NSButton.alloc().initWithFrame_(NSMakeRect(width-130, labelY - 40, 100, 28))
+        self.saveBtn = NSButton.alloc().initWithFrame_(NSMakeRect(width-150, labelY - 40, 100, 28))
         self.saveBtn.setTitle_(t('save'))
         self.saveBtn.setBezelStyle_(NSBezelStyleRounded)
         self.saveBtn.setTarget_(self)
         self.saveBtn.setAction_(objc.selector(self.saveProject_, signature=b"v@:"))
-        content.addSubview_(self.saveBtn)
+        dataView.addSubview_(self.saveBtn)
+        
+        dataTab.setView_(dataView)
+        tabView.addTabViewItem_(dataTab)
+        
+        # Вкладка 2: Утилиты
+        utilsTab = NSTabViewItem.alloc().initWithIdentifier_("utils")
+        utilsTab.setLabel_("Утилиты")
+        utilsView = NSView.alloc().initWithFrame_(tabView.contentRect())
+        
+        # Кнопка Бекап базы данных
+        backupBtn = NSButton.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 60, 180, 32))
+        backupBtn.setTitle_("Создать бекап БД")
+        backupBtn.setBezelStyle_(NSBezelStyleRounded)
+        backupBtn.setTarget_(self)
+        backupBtn.setAction_(objc.selector(self.createBackup_, signature=b"v@:@"))
+        utilsView.addSubview_(backupBtn)
+        
+        # Описание для бекапа
+        backupLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 90, width-60, 20))
+        backupLabel.setStringValue_("Сохранить копию базы данных")
+        backupLabel.setBezeled_(False)
+        backupLabel.setDrawsBackground_(False)
+        backupLabel.setEditable_(False)
+        backupLabel.setTextColor_(NSColor.secondaryLabelColor())
+        utilsView.addSubview_(backupLabel)
+        
+        # Кнопка Восстановление из бекапа
+        restoreBtn = NSButton.alloc().initWithFrame_(NSMakeRect(220, tabHeight - 60, 200, 32))
+        restoreBtn.setTitle_("Восстановить из бекапа")
+        restoreBtn.setBezelStyle_(NSBezelStyleRounded)
+        restoreBtn.setTarget_(self)
+        restoreBtn.setAction_(objc.selector(self.restoreBackup_, signature=b"v@:@"))
+        utilsView.addSubview_(restoreBtn)
+        
+        # Описание для восстановления
+        restoreLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(220, tabHeight - 90, width-240, 20))
+        restoreLabel.setStringValue_("Загрузить базу данных из файла бекапа")
+        restoreLabel.setBezeled_(False)
+        restoreLabel.setDrawsBackground_(False)
+        restoreLabel.setEditable_(False)
+        restoreLabel.setTextColor_(NSColor.secondaryLabelColor())
+        utilsView.addSubview_(restoreLabel)
+        
+        utilsTab.setView_(utilsView)
+        tabView.addTabViewItem_(utilsTab)
+        
+        # Вкладка 3: Интеграции
+        integrationsTab = NSTabViewItem.alloc().initWithIdentifier_("integrations")
+        integrationsTab.setLabel_("Интеграции")
+        integrationsView = NSView.alloc().initWithFrame_(tabView.contentRect())
+        
+        # Заглушка для будущих интеграций
+        placeholderLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 60, width-60, 40))
+        placeholderLabel.setStringValue_("Здесь будут настройки интеграций\n(GitHub, Jira, Slack и др.)")
+        placeholderLabel.setBezeled_(False)
+        placeholderLabel.setDrawsBackground_(False)
+        placeholderLabel.setEditable_(False)
+        placeholderLabel.setTextColor_(NSColor.secondaryLabelColor())
+        integrationsView.addSubview_(placeholderLabel)
+        
+        integrationsTab.setView_(integrationsView)
+        tabView.addTabViewItem_(integrationsTab)
+        
+        content.addSubview_(tabView)
     
     def reloadProjects(self):
         self.projects = self.db.get_all_projects()
@@ -1151,6 +1252,165 @@ class ProjectSettingsWindowController(NSObject):
             project = self.projects[row]
             self.nameField.setStringValue_(project['name'])
             self.rateField.setStringValue_(str(project['hourly_rate']))
+    
+    def createBackup_(self, sender):
+        """Создание бекапа базы данных"""
+        try:
+            import shutil
+            from datetime import datetime
+            
+            # Используем ту же логику поиска БД, что и в database.py
+            base_dir = os.path.dirname(__file__)
+            db_path = os.path.join(base_dir, 'timetracker.db')
+            
+            # Если БД нет в рабочей папке, ищем в Application Support
+            if not os.path.exists(db_path):
+                app_support = os.path.expanduser('~/Library/Application Support/MacikTimer')
+                db_path = os.path.join(app_support, 'timetracker.db')
+            
+            # Проверяем, существует ли файл базы данных
+            if not os.path.exists(db_path):
+                raise FileNotFoundError(f"База данных не найдена: {db_path}")
+            
+            NSLog(f"Database path: {db_path}")
+            
+            # Создаем диалог выбора места сохранения
+            panel = NSSavePanel.savePanel()
+            panel.setTitle_("Сохранить бекап базы данных")
+            
+            # Имя файла по умолчанию с датой и временем
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            panel.setNameFieldStringValue_(f"MTimer_backup_{timestamp}.db")
+            panel.setAllowedFileTypes_(["db"])
+            
+            # Показываем диалог
+            if panel.runModal() == NSModalResponseOK:
+                backup_path = panel.URL().path()
+                
+                # Копируем файл базы данных
+                shutil.copy2(db_path, backup_path)
+                
+                # Показываем сообщение об успехе
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_("Бекап создан успешно")
+                alert.setInformativeText_(f"База данных сохранена в:\n{backup_path}")
+                alert.setAlertStyle_(NSAlertStyleInformational)
+                alert.addButtonWithTitle_("OK")
+                alert.runModal()
+                
+                NSLog(f"Backup created: {backup_path}")
+        
+        except Exception as e:
+            NSLog(f"Backup error: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Ошибка создания бекапа")
+            alert.setInformativeText_(str(e))
+            alert.setAlertStyle_(NSAlertStyleWarning)
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+    
+    def restoreBackup_(self, sender):
+        """Восстановление базы данных из бекапа"""
+        try:
+            import shutil
+            from Cocoa import NSOpenPanel
+            
+            # Находим путь к текущей базе данных
+            base_dir = os.path.dirname(__file__)
+            db_path = os.path.join(base_dir, 'timetracker.db')
+            
+            # Если БД нет в рабочей папке, используем Application Support
+            if not os.path.exists(db_path):
+                app_support = os.path.expanduser('~/Library/Application Support/MacikTimer')
+                os.makedirs(app_support, exist_ok=True)
+                db_path = os.path.join(app_support, 'timetracker.db')
+            
+            NSLog(f"Target database path: {db_path}")
+            
+            # Предупреждение о замене текущей базы
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Восстановление из бекапа")
+            alert.setInformativeText_("ВНИМАНИЕ: Текущая база данных будет заменена на выбранный бекап. Все несохраненные данные будут потеряны. Рекомендуется сначала создать бекап текущей базы.\n\nПродолжить?")
+            alert.setAlertStyle_(NSAlertStyleWarning)
+            alert.addButtonWithTitle_("Продолжить")
+            alert.addButtonWithTitle_("Отмена")
+            
+            # Первая кнопка возвращает 1000, вторая - 1001
+            response = alert.runModal()
+            NSLog(f"Alert response: {response}")
+            if response != 1000:  # 1000 = первая кнопка "Продолжить"
+                return
+            
+            # Создаем диалог выбора файла
+            panel = NSOpenPanel.openPanel()
+            panel.setTitle_("Выберите файл бекапа")
+            panel.setAllowedFileTypes_(["db"])
+            panel.setCanChooseFiles_(True)
+            panel.setCanChooseDirectories_(False)
+            panel.setAllowsMultipleSelection_(False)
+            
+            # Показываем диалог
+            if panel.runModal() == NSModalResponseOK:
+                backup_path = panel.URL().path()
+                
+                # Проверяем, что файл существует
+                if not os.path.exists(backup_path):
+                    raise FileNotFoundError(f"Файл бекапа не найден: {backup_path}")
+                
+                # Создаем временный бекап текущей БД на случай ошибки
+                temp_backup = None
+                if os.path.exists(db_path):
+                    temp_backup = db_path + '.temp_backup'
+                    shutil.copy2(db_path, temp_backup)
+                
+                try:
+                    # Закрываем текущее соединение с БД
+                    if hasattr(self, 'db') and self.db and self.db.connection:
+                        self.db.connection.close()
+                        self.db.connection = None
+                    
+                    # Копируем файл бекапа
+                    shutil.copy2(backup_path, db_path)
+                    
+                    # Переинициализируем базу данных
+                    if hasattr(self, 'db'):
+                        self.db = Database()
+                    
+                    # Удаляем временный бекап
+                    if temp_backup and os.path.exists(temp_backup):
+                        os.remove(temp_backup)
+                    
+                    # Показываем сообщение об успехе
+                    alert = NSAlert.alloc().init()
+                    alert.setMessageText_("Восстановление завершено")
+                    alert.setInformativeText_("База данных успешно восстановлена из бекапа. Перезапустите приложение для применения изменений.")
+                    alert.setAlertStyle_(NSAlertStyleInformational)
+                    alert.addButtonWithTitle_("OK")
+                    alert.runModal()
+                    
+                    NSLog(f"Database restored from: {backup_path}")
+                    
+                except Exception as restore_error:
+                    # Восстанавливаем из временного бекапа при ошибке
+                    if temp_backup and os.path.exists(temp_backup):
+                        shutil.copy2(temp_backup, db_path)
+                        os.remove(temp_backup)
+                    raise restore_error
+        
+        except Exception as e:
+            NSLog(f"Restore error: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Ошибка восстановления")
+            alert.setInformativeText_(str(e))
+            alert.setAlertStyle_(NSAlertStyleWarning)
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
     
     def saveProject_(self, sender):
         """Сохраняем изменения выбранного проекта"""
@@ -1463,6 +1723,26 @@ class AppDelegate(NSObject):
                         break
         except Exception as e:
             NSLog(f"Set dock icon error: {e}")
+    
+    @objc.python_method
+    def _setWindowIcon(self, window):
+        """Устанавливает иконку для окна"""
+        try:
+            base = os.path.dirname(__file__)
+            candidates = [
+                os.path.join(base, "assets", "app_icon.icns"),
+                os.path.join(base, "assets", "app_icon.png"),
+            ]
+            for p in candidates:
+                if os.path.exists(p):
+                    img = NSImage.alloc().initWithContentsOfFile_(p)
+                    if img:
+                        # Устанавливаем иконку для окна через представленное окно
+                        window.setRepresentedURL_(None)
+                        window.standardWindowButton_(0).setImage_(img)  # 0 = Close button's document icon
+                        break
+        except Exception as e:
+            NSLog(f"Set window icon error: {e}")
 
     # ===== Статус-бар (меню-бар) =====
     @objc.python_method
