@@ -10,7 +10,7 @@ from Cocoa import (
     NSAlert, NSAlertStyleWarning, NSView, NSColor, NSMenu, NSMenuItem, NSImage,
     NSNotificationCenter, NSStatusBar, NSVariableStatusItemLength
 )
-from Foundation import NSLog, NSDateFormatter, NSDateComponentsFormatter, NSBundle, NSUserNotification, NSUserNotificationCenter
+from Foundation import NSLog, NSDateFormatter, NSDateComponentsFormatter, NSBundle, NSUserNotification, NSUserNotificationCenter, NSThread
 import os
 from PyObjCTools import AppHelper
 from datetime import datetime
@@ -1227,6 +1227,14 @@ class AppDelegate(NSObject):
             settingsItem.setTarget_(self)
             appMenu.addItem_(settingsItem)
             
+            # Пункт меню Статистика
+            statisticsItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                t('statistics'), objc.selector(self.openStatistics_, signature=b"v@:@"), "s"
+            )
+            statisticsItem.setKeyEquivalentModifierMask_(COMMAND_MASK | SHIFT_MASK)
+            statisticsItem.setTarget_(self)
+            appMenu.addItem_(statisticsItem)
+            
             prefsItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
                 t('preferences'), "preferences:", ""
             )
@@ -1320,6 +1328,40 @@ class AppDelegate(NSObject):
             self.controller.reloadProjects()
         except Exception:
             pass
+    
+    def openStatistics_(self, sender):
+        """Відкриває вікно статистики"""
+        try:
+            import subprocess
+            import sys
+            import os
+            
+            # Запускаємо статистику в окремому процесі
+            # Це дозволяє вікну працювати незалежно від основного застосунку
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            python_exec = sys.executable
+            
+            # Створюємо скрипт для запуску статистики
+            stats_script = os.path.join(script_dir, 'show_stats.py')
+            
+            # Запускаємо в фоні
+            subprocess.Popen([python_exec, stats_script], 
+                           cwd=script_dir,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            
+            NSLog("Statistics window launched in separate process")
+                
+        except Exception as e:
+            NSLog(f"Statistics error: {e}")
+            import traceback
+            traceback.print_exc()
+            from AppKit import NSAlert, NSAlertStyleWarning
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('error'))
+            alert.setInformativeText_(f"Помилка відображення статистики:\n{str(e)}")
+            alert.setAlertStyle_(NSAlertStyleWarning)
+            alert.runModal()
     
     @objc.python_method
     def _setDockIcon(self):

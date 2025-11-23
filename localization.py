@@ -69,6 +69,7 @@ TRANSLATIONS = {
         
         # Настройки проектов
         'settings': 'Settings',
+        'statistics': 'Statistics',
         'project_settings': 'Project Settings',
         'edit_project': 'Edit Project',
         'save': 'Save',
@@ -156,11 +157,12 @@ TRANSLATIONS = {
         
         # Настройки проектов
         'settings': 'Настройки',
-        'project_settings': 'Настройки проектов',
-        'edit_project': 'Изменить проект',
+        'statistics': 'Статистика',
+        'project_settings': 'Настройки проекта',
+        'edit_project': 'Редактировать проект',
         'save': 'Сохранить',
         'project': 'Проект',
-        'rate': 'Ставка ($/ч)',
+        'rate': 'Ставка (₽/ч)',
         
         # Меню приложения
         'about': 'О программе MTimer',
@@ -243,6 +245,7 @@ TRANSLATIONS = {
         
         # Налаштування проектів
         'settings': 'Налаштування',
+        'statistics': 'Статистика',
         'project_settings': 'Налаштування проектів',
         'edit_project': 'Змінити проект',
         'save': 'Зберегти',

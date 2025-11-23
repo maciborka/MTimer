@@ -292,6 +292,27 @@ class Database:
         row = cursor.fetchone()
         return row['total'] if row['total'] else 0
     
+    def get_sessions_in_range(self, start_date, end_date):
+        """Получить все сессии в указанном диапазоне дат для статистики"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 
+                s.*,
+                p.name as project_name,
+                p.color as project_color,
+                p.hourly_rate,
+                CASE 
+                    WHEN p.hourly_rate > 0 THEN (s.duration / 3600.0) * p.hourly_rate
+                    ELSE 0
+                END as cost
+            FROM time_sessions s
+            LEFT JOIN projects p ON s.project_id = p.id
+            WHERE s.start_time >= ? AND s.start_time <= ?
+            ORDER BY s.start_time ASC
+        ''', (start_date, end_date))
+        return cursor.fetchall()
+    
     def close(self):
         if self.connection:
             self.connection.close()

@@ -24,7 +24,7 @@ OPTIONS = {
         'CFBundleDisplayName': 'MTimer',
         'CFBundleIdentifier': 'com.macik.timer',
         # Версии для стандартного About-панеля
-        'CFBundleShortVersionString': '1.0.0',
+        'CFBundleShortVersionString': '1.0.1',
         'CFBundleVersion': '1',
     # Авторские данные (будут показаны в About) — переносы строк через \n
     'NSHumanReadableCopyright': '© 2025 Maciborka Vitalik\nhttps://it-world.com.ua\nmaciborka@gmail.com',
