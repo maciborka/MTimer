@@ -33,6 +33,26 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         
+        # Таблица компаний
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS companies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Таблица видов работ
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS work_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
         # Таблица проектов
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS projects (
@@ -40,7 +60,9 @@ class Database:
                 name TEXT NOT NULL UNIQUE,
                 color TEXT DEFAULT '#0000FF',
                 hourly_rate REAL DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                company_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES companies (id)
             )
         ''')
         
@@ -49,7 +71,13 @@ class Database:
             cursor.execute('ALTER TABLE projects ADD COLUMN hourly_rate REAL DEFAULT 0')
             conn.commit()
         except sqlite3.OperationalError:
-            # Колонка уже существует
+            pass
+        
+        # Добавляем колонку company_id если её нет (миграция)
+        try:
+            cursor.execute('ALTER TABLE projects ADD COLUMN company_id INTEGER REFERENCES companies(id)')
+            conn.commit()
+        except sqlite3.OperationalError:
             pass
         
         # Таблица временных сессий
@@ -58,12 +86,21 @@ class Database:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER,
                 description TEXT,
+                work_type_id INTEGER,
                 start_time TIMESTAMP NOT NULL,
                 end_time TIMESTAMP,
                 duration INTEGER DEFAULT 0,
-                FOREIGN KEY (project_id) REFERENCES projects (id)
+                FOREIGN KEY (project_id) REFERENCES projects (id),
+                FOREIGN KEY (work_type_id) REFERENCES work_types (id)
             )
         ''')
+        
+        # Добавляем колонку work_type_id если её нет (миграция)
+        try:
+            cursor.execute('ALTER TABLE time_sessions ADD COLUMN work_type_id INTEGER REFERENCES work_types(id)')
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
         
         conn.commit()
     
@@ -316,4 +353,103 @@ class Database:
     def close(self):
         if self.connection:
             self.connection.close()
-            self.connection = None
+    
+    # ===== Методы для работы с компаниями =====
+    
+    def create_company(self, code, name):
+        """Создать новую компанию"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('INSERT INTO companies (code, name) VALUES (?, ?)', (code, name))
+            conn.commit()
+            return cursor.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+    
+    def get_all_companies(self):
+        """Получить все компании"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM companies ORDER BY name')
+        return cursor.fetchall()
+    
+    def get_company(self, company_id):
+        """Получить компанию по ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM companies WHERE id = ?', (company_id,))
+        return cursor.fetchone()
+    
+    def update_company(self, company_id, code, name):
+        """Обновить данные компании"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('UPDATE companies SET code = ?, name = ? WHERE id = ?', (code, name, company_id))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+    
+    def delete_company(self, company_id):
+        """Удалить компанию"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        # Проверяем, есть ли проекты с этой компанией
+        cursor.execute('SELECT COUNT(*) as cnt FROM projects WHERE company_id = ?', (company_id,))
+        if cursor.fetchone()['cnt'] > 0:
+            return False  # Нельзя удалить, есть связанные проекты
+        cursor.execute('DELETE FROM companies WHERE id = ?', (company_id,))
+        conn.commit()
+        return True
+    
+    # ===== Методы для работы с видами работ =====
+    
+    def create_work_type(self, name, description=''):
+        """Создать новый вид работы"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('INSERT INTO work_types (name, description) VALUES (?, ?)', (name, description))
+            conn.commit()
+            return cursor.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+    
+    def get_all_work_types(self):
+        """Получить все виды работ"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM work_types ORDER BY name')
+        return cursor.fetchall()
+    
+    def get_work_type(self, work_type_id):
+        """Получить вид работы по ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM work_types WHERE id = ?', (work_type_id,))
+        return cursor.fetchone()
+    
+    def update_work_type(self, work_type_id, name, description=''):
+        """Обновить вид работы"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('UPDATE work_types SET name = ?, description = ? WHERE id = ?', (name, description, work_type_id))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+    
+    def delete_work_type(self, work_type_id):
+        """Удалить вид работы"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        # Проверяем, есть ли сессии с этим видом работы
+        cursor.execute('SELECT COUNT(*) as cnt FROM time_sessions WHERE work_type_id = ?', (work_type_id,))
+        if cursor.fetchone()['cnt'] > 0:
+            return False  # Нельзя удалить, есть связанные сессии
+        cursor.execute('DELETE FROM work_types WHERE id = ?', (work_type_id,))
+        conn.commit()
+        return True
