@@ -9,7 +9,14 @@ icon_path = os.path.join('assets', 'app_icon.icns')
 if not os.path.exists(icon_path):
     icon_path = None
 
-resources = ['assets'] if os.path.isdir('assets') else []
+# Включаем show_stats.py и другие необходимые файлы
+resources = []
+if os.path.isdir('assets'):
+    resources.append('assets')
+if os.path.exists('show_stats.py'):
+    resources.append('show_stats.py')
+if os.path.exists('sessions.db'):
+    resources.append('sessions.db')
 
 OPTIONS = {
     'argv_emulation': True,

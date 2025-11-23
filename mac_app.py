@@ -1404,20 +1404,35 @@ class AppDelegate(NSObject):
             
             # Запускаємо статистику в окремому процесі
             # Це дозволяє вікну працювати незалежно від основного застосунку
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            python_exec = sys.executable
             
-            # Створюємо скрипт для запуску статистики
-            stats_script = os.path.join(script_dir, 'show_stats.py')
+            # Определяем, запущены ли мы из .app bundle
+            if getattr(sys, 'frozen', False):
+                # Запущены из .app
+                bundle_dir = os.environ.get('RESOURCEPATH', os.path.dirname(os.path.abspath(sys.executable)))
+                script_dir = bundle_dir
+                stats_script = os.path.join(bundle_dir, 'show_stats.py')
+                python_exec = sys.executable
+            else:
+                # Запущены из исходников
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                stats_script = os.path.join(script_dir, 'show_stats.py')
+                python_exec = sys.executable
             
             # Передаємо параметри як аргументи
             args = [python_exec, stats_script, current_filter, str(selected_project_id)]
             
-            # Запускаємо в фоні
-            subprocess.Popen(args, 
-                           cwd=script_dir,
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
+            NSLog(f"Launching statistics: script={stats_script}, python={python_exec}, cwd={script_dir}")
+            
+            # Запускаємо в фоні (с выводом для отладки при запуске из .app)
+            if getattr(sys, 'frozen', False):
+                # В .app показываем вывод для отладки
+                subprocess.Popen(args, cwd=script_dir)
+            else:
+                # Из исходников - скрываем вывод
+                subprocess.Popen(args, 
+                               cwd=script_dir,
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
             
             NSLog(f"Statistics window launched: filter={current_filter}, project={selected_project_id}")
                 

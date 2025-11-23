@@ -27,7 +27,7 @@ class StatisticsGenerator:
             # Якщо не вийшло - без мікросекунд
             return datetime.strptime(datetime_str, '%Y-%m-%dT%H:%M:%S')
         
-    def get_daily_stats(self, days=30):
+    def get_daily_stats(self, days=30, project_id=None):
         """Отримати статистику по днях"""
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
@@ -36,6 +36,10 @@ class StatisticsGenerator:
             start_date.strftime('%Y-%m-%d'),
             end_date.strftime('%Y-%m-%d 23:59:59')
         )
+        
+        # Фільтруємо по проєкту якщо вказано
+        if project_id is not None:
+            sessions = [s for s in sessions if s['project_id'] == project_id]
         
         daily_data = defaultdict(lambda: {'duration': 0, 'cost': 0, 'sessions': 0})
         
@@ -47,7 +51,7 @@ class StatisticsGenerator:
             
         return daily_data
     
-    def get_project_distribution(self, days=30):
+    def get_project_distribution(self, days=30, project_id=None):
         """Розподіл часу по проєктах"""
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
@@ -56,6 +60,10 @@ class StatisticsGenerator:
             start_date.strftime('%Y-%m-%d'),
             end_date.strftime('%Y-%m-%d 23:59:59')
         )
+        
+        # Фільтруємо по проєкту якщо вказано
+        if project_id is not None:
+            sessions = [s for s in sessions if s['project_id'] == project_id]
         
         project_data = defaultdict(lambda: {'duration': 0, 'cost': 0})
         
@@ -66,7 +74,7 @@ class StatisticsGenerator:
             
         return project_data
     
-    def get_hourly_distribution(self, days=30):
+    def get_hourly_distribution(self, days=30, project_id=None):
         """Розподіл активності по годинах дня"""
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
@@ -75,6 +83,10 @@ class StatisticsGenerator:
             start_date.strftime('%Y-%m-%d'),
             end_date.strftime('%Y-%m-%d 23:59:59')
         )
+        
+        # Фільтруємо по проєкту якщо вказано
+        if project_id is not None:
+            sessions = [s for s in sessions if s['project_id'] == project_id]
         
         hourly_data = defaultdict(float)
         
@@ -85,7 +97,7 @@ class StatisticsGenerator:
             
         return hourly_data
     
-    def get_weekly_comparison(self):
+    def get_weekly_comparison(self, project_id=None):
         """Порівняння поточного та минулого тижня"""
         today = datetime.now()
         
@@ -107,6 +119,11 @@ class StatisticsGenerator:
             prev_week_end.strftime('%Y-%m-%d 23:59:59')
         )
         
+        # Фільтруємо по проєкту якщо вказано
+        if project_id is not None:
+            current_week = [s for s in current_week if s['project_id'] == project_id]
+            previous_week = [s for s in previous_week if s['project_id'] == project_id]
+        
         current_data = defaultdict(float)
         previous_data = defaultdict(float)
         
@@ -126,49 +143,60 @@ class StatisticsGenerator:
         minutes = int((seconds % 3600) // 60)
         return f"{hours}г {minutes}хв"
     
-    def create_dashboard(self, period_days=30):
+    def create_dashboard(self, period_days=30, project_id=None):
         """Створити дашборд з усіма графіками"""
         # Налаштування стилю
         plt.style.use('seaborn-v0_8-darkgrid')
         
+        # Отримуємо назву проєкту для заголовка
+        project_name = None
+        if project_id is not None:
+            projects = self.db.get_all_projects()
+            for p in projects:
+                if p['id'] == project_id:
+                    project_name = p['name']
+                    break
+        
         # Створюємо фігуру з підграфіками
         fig = plt.figure(figsize=(16, 10))
-        fig.suptitle(f'Статистика відстеження часу (останні {period_days} днів)', 
-                     fontsize=16, fontweight='bold', y=0.995)
+        title = f'Статистика відстеження часу (останні {period_days} днів)'
+        if project_name:
+            title += f' - {project_name}'
+        fig.suptitle(title, fontsize=16, fontweight='bold', y=0.995)
         
         # Підключаємо українські шрифти
         plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'DejaVu Sans']
         
         # 1. Графік по днях (лінійний)
         ax1 = plt.subplot(2, 3, 1)
-        self._plot_daily_trend(ax1, period_days)
+        self._plot_daily_trend(ax1, period_days, project_id)
         
         # 2. Розподіл по проєктах (кругова діаграма)
         ax2 = plt.subplot(2, 3, 2)
-        self._plot_project_pie(ax2, period_days)
+        self._plot_project_pie(ax2, period_days, project_id)
         
         # 3. Розподіл по годинах (стовпчикова)
         ax3 = plt.subplot(2, 3, 3)
-        self._plot_hourly_distribution(ax3, period_days)
+        self._plot_hourly_distribution(ax3, period_days, project_id)
         
         # 4. Порівняння тижнів (групова стовпчикова)
         ax4 = plt.subplot(2, 3, 4)
-        self._plot_weekly_comparison(ax4)
+        self._plot_weekly_comparison(ax4, project_id)
         
         # 5. Кумулятивна статистика (площа)
         ax5 = plt.subplot(2, 3, 5)
-        self._plot_cumulative(ax5, period_days)
+        self._plot_cumulative(ax5, period_days, project_id)
         
         # 6. Топ проєкти по вартості (горизонтальна стовпчикова)
         ax6 = plt.subplot(2, 3, 6)
-        self._plot_top_projects(ax6, period_days)
+        self._plot_top_projects(ax6, period_days, project_id)
         
         plt.tight_layout()
         return fig
     
-    def _plot_daily_trend(self, ax, days):
+    def _plot_daily_trend(self, ax, days, project_id=None):
         """Графік тренду по днях"""
-        daily_stats = self.get_daily_stats(days)
+        daily_stats = self.get_daily_stats(days, project_id)
         
         if not daily_stats:
             ax.text(0.5, 0.5, 'Немає даних', ha='center', va='center')
@@ -191,17 +219,17 @@ class StatisticsGenerator:
         ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, days // 10)))
         plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
     
-    def _plot_project_pie(self, ax, days):
+    def _plot_project_pie(self, ax, days, project_id=None):
         """Кругова діаграма розподілу по проєктах"""
-        project_stats = self.get_project_distribution(days)
+        project_data = self.get_project_distribution(days, project_id)
         
-        if not project_stats:
+        if not project_data:
             ax.text(0.5, 0.5, 'Немає даних', ha='center', va='center')
             ax.set_title('Розподіл по проєктах')
             return
         
         # Топ-5 проєктів + інші
-        sorted_projects = sorted(project_stats.items(), 
+        sorted_projects = sorted(project_data.items(), 
                                 key=lambda x: x[1]['duration'], 
                                 reverse=True)
         
@@ -231,9 +259,9 @@ class StatisticsGenerator:
         
         ax.set_title('Розподіл часу по проєктах', fontweight='bold')
     
-    def _plot_hourly_distribution(self, ax, days):
+    def _plot_hourly_distribution(self, ax, days, project_id=None):
         """Розподіл активності по годинах"""
-        hourly_stats = self.get_hourly_distribution(days)
+        hourly_stats = self.get_hourly_distribution(days, project_id)
         
         if not hourly_stats:
             ax.text(0.5, 0.5, 'Немає даних', ha='center', va='center')
@@ -252,9 +280,9 @@ class StatisticsGenerator:
         ax.set_xticks(range(0, 24, 3))
         ax.grid(True, alpha=0.3, axis='y')
     
-    def _plot_weekly_comparison(self, ax):
+    def _plot_weekly_comparison(self, ax, project_id=None):
         """Порівняння поточного та минулого тижня"""
-        current, previous = self.get_weekly_comparison()
+        current, previous = self.get_weekly_comparison(project_id)
         
         days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд']
         x = np.arange(len(days))
@@ -275,9 +303,9 @@ class StatisticsGenerator:
         ax.legend()
         ax.grid(True, alpha=0.3, axis='y')
     
-    def _plot_cumulative(self, ax, days):
+    def _plot_cumulative(self, ax, days, project_id=None):
         """Кумулятивний графік"""
-        daily_stats = self.get_daily_stats(days)
+        daily_stats = self.get_daily_stats(days, project_id)
         
         if not daily_stats:
             ax.text(0.5, 0.5, 'Немає даних', ha='center', va='center')
@@ -300,18 +328,18 @@ class StatisticsGenerator:
         ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, days // 10)))
         plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
     
-    def _plot_top_projects(self, ax, days):
+    def _plot_top_projects(self, ax, days, project_id=None):
         """Топ проєктів по вартості"""
-        project_stats = self.get_project_distribution(days)
+        project_data = self.get_project_distribution(days, project_id)
         
-        if not project_stats:
+        if not project_data:
             ax.text(0.5, 0.5, 'Немає даних', ha='center', va='center')
             ax.set_title('Топ проєкти по прибутку')
             return
         
         # Топ-10 по вартості
         sorted_projects = sorted(
-            [(name, data['cost']) for name, data in project_stats.items() if data['cost'] > 0],
+            [(name, data['cost']) for name, data in project_data.items() if data['cost'] > 0],
             key=lambda x: x[1],
             reverse=True
         )[:10]
@@ -335,9 +363,9 @@ class StatisticsGenerator:
         for i, cost in enumerate(costs):
             ax.text(cost, i, f' ₴{cost:.0f}', va='center', fontsize=9)
     
-    def show_statistics(self, period_days=30):
+    def show_statistics(self, period_days=30, project_id=None):
         """Показати вікно статистики"""
-        fig = self.create_dashboard(period_days)
+        fig = self.create_dashboard(period_days, project_id)
         
         # Встановлюємо заголовок вікна
         manager = plt.get_current_fig_manager()
@@ -347,9 +375,9 @@ class StatisticsGenerator:
         plt.ion()  # Інтерактивний режим
         plt.show(block=False)  # Не блокуємо виконання
     
-    def export_statistics(self, filename, period_days=30):
+    def export_statistics(self, filename, period_days=30, project_id=None):
         """Експортувати статистику в файл"""
-        fig = self.create_dashboard(period_days)
+        fig = self.create_dashboard(period_days, project_id)
         fig.savefig(filename, dpi=300, bbox_inches='tight')
         plt.close(fig)
         return filename
