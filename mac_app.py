@@ -2272,6 +2272,283 @@ class WorkTypesWindowController(NSObject):
         self.reloadData()
 
 
+class AllTasksWindowController(NSObject):
+    """Вікно для перегляду всіх виконаних задач"""
+    def init(self):
+        self = objc.super(AllTasksWindowController, self).init()
+        if self is None:
+            return None
+        self.db = Database()
+        self.all_sessions = []
+        self.window = None
+        self.tableView = None
+        self.filterPopup = None
+        self.projectPopup = None
+        self.projects_cache = []
+        self.selected_project_id = None
+        self.current_filter = 'all'  # За замовчуванням - всі задачі
+        return self
+    
+    def showWindow(self):
+        if self.window is None:
+            self.setupUI()
+        self.reloadData()
+        self.window.makeKeyAndOrderFront_(None)
+    
+    def setupUI(self):
+        # Створюємо вікно
+        screen = NSScreen.mainScreen()
+        screen_frame = screen.frame()
+        width = 900
+        height = 600
+        x = (screen_frame.size.width - width) / 2
+        y = (screen_frame.size.height - height) / 2
+        
+        # Імпортуємо додаткові константи для масштабування
+        try:
+            from Cocoa import NSWindowStyleMaskTitled, NSWindowStyleMaskClosable, NSWindowStyleMaskResizable, NSWindowStyleMaskMiniaturizable
+            style_mask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable
+        except ImportError:
+            style_mask = NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask | 4  # 4 = NSMiniaturizableWindowMask
+        
+        self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(x, y, width, height),
+            style_mask,
+            2,
+            False
+        )
+        self.window.setTitle_("Статистика - Всі задачі")
+        self.window.setReleasedWhenClosed_(False)
+        
+        # Встановлюємо мінімальний і максимальний розмір вікна
+        from Cocoa import NSMakeSize
+        self.window.setMinSize_(NSMakeSize(600, 400))
+        self.window.setMaxSize_(NSMakeSize(1600, 1200))
+        
+        content = self.window.contentView()
+        
+        # Імпортуємо константи для autoresizing
+        try:
+            from Cocoa import NSViewWidthSizable, NSViewHeightSizable, NSViewMinXMargin
+        except ImportError:
+            NSViewWidthSizable = 2
+            NSViewHeightSizable = 16
+            NSViewMinXMargin = 4
+        
+        # Фільтри зверху
+        filterY = height - 60
+        
+        # Label "Фільтр:"
+        filterLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, filterY, 60, 20))
+        filterLabel.setStringValue_("Період:")
+        filterLabel.setBezeled_(False)
+        filterLabel.setDrawsBackground_(False)
+        filterLabel.setEditable_(False)
+        content.addSubview_(filterLabel)
+        
+        # Popup для вибору періоду
+        self.filterPopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(90, filterY, 150, 28), False)
+        self.filterPopup.addItemWithTitle_("Всі задачі")
+        self.filterPopup.addItemWithTitle_("Сьогодні")
+        self.filterPopup.addItemWithTitle_("Тиждень")
+        self.filterPopup.addItemWithTitle_("Місяць")
+        self.filterPopup.setTarget_(self)
+        self.filterPopup.setAction_(objc.selector(self.filterChanged_, signature=b"v@:"))
+        content.addSubview_(self.filterPopup)
+        
+        # Label "Проект:"
+        projectLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(270, filterY, 60, 20))
+        projectLabel.setStringValue_("Проект:")
+        projectLabel.setBezeled_(False)
+        projectLabel.setDrawsBackground_(False)
+        projectLabel.setEditable_(False)
+        content.addSubview_(projectLabel)
+        
+        # Popup для вибору проекту
+        self.projectPopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(340, filterY, 250, 28), False)
+        self.projectPopup.setTarget_(self)
+        self.projectPopup.setAction_(objc.selector(self.projectChanged_, signature=b"v@:"))
+        content.addSubview_(self.projectPopup)
+        
+        # Label з загальною статистикою
+        self.statsLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(620, filterY, 260, 20))
+        self.statsLabel.setStringValue_("Всього: 0 задач, 00:00:00")
+        self.statsLabel.setBezeled_(False)
+        self.statsLabel.setDrawsBackground_(False)
+        self.statsLabel.setEditable_(False)
+        self.statsLabel.setAlignment_(2)  # Right align
+        self.statsLabel.setAutoresizingMask_(NSViewMinXMargin)  # Прилипає до правого краю
+        content.addSubview_(self.statsLabel)
+        
+        # Таблиця задач
+        tableY = 20
+        tableHeight = height - 100
+        scrollView = NSScrollView.alloc().initWithFrame_(NSMakeRect(20, tableY, width-40, tableHeight))
+        scrollView.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)  # Розтягується по ширині та висоті
+        self.tableView = NSTableView.alloc().initWithFrame_(scrollView.bounds())
+        
+        # Колонки таблиці
+        col1 = NSTableColumn.alloc().initWithIdentifier_("description")
+        col1.setWidth_((width-40) * 0.35)
+        col1.headerCell().setStringValue_("Опис")
+        self.tableView.addTableColumn_(col1)
+        
+        col2 = NSTableColumn.alloc().initWithIdentifier_("project")
+        col2.setWidth_((width-40) * 0.20)
+        col2.headerCell().setStringValue_("Проект")
+        self.tableView.addTableColumn_(col2)
+        
+        col3 = NSTableColumn.alloc().initWithIdentifier_("date")
+        col3.setWidth_((width-40) * 0.15)
+        col3.headerCell().setStringValue_("Дата")
+        self.tableView.addTableColumn_(col3)
+        
+        col4 = NSTableColumn.alloc().initWithIdentifier_("time")
+        col4.setWidth_((width-40) * 0.15)
+        col4.headerCell().setStringValue_("Час")
+        self.tableView.addTableColumn_(col4)
+        
+        col5 = NSTableColumn.alloc().initWithIdentifier_("duration")
+        col5.setWidth_((width-40) * 0.15)
+        col5.headerCell().setStringValue_("Тривалість")
+        self.tableView.addTableColumn_(col5)
+        
+        self.tableView.setDelegate_(self)
+        self.tableView.setDataSource_(self)
+        
+        scrollView.setDocumentView_(self.tableView)
+        scrollView.setHasVerticalScroller_(True)
+        content.addSubview_(scrollView)
+        
+        # Зберігаємо scrollView для подальшого використання
+        self.scrollView = scrollView
+        
+        # Встановлюємо делегат вікна для відстеження зміни розміру
+        self.window.setDelegate_(self)
+        
+        # Завантажуємо список проектів
+        self.loadProjects()
+    
+    def loadProjects(self):
+        """Завантажити список проектів"""
+        self.projects_cache = self.db.get_all_projects()
+        self.projectPopup.removeAllItems()
+        self.projectPopup.addItemWithTitle_("Всі проекти")
+        for p in self.projects_cache:
+            self.projectPopup.addItemWithTitle_(p['name'])
+    
+    def filterChanged_(self, sender):
+        """Обробка зміни фільтра періоду"""
+        idx = self.filterPopup.indexOfSelectedItem()
+        if idx == 0:
+            self.current_filter = 'all'
+        elif idx == 1:
+            self.current_filter = 'today'
+        elif idx == 2:
+            self.current_filter = 'week'
+        elif idx == 3:
+            self.current_filter = 'month'
+        self.reloadData()
+    
+    def projectChanged_(self, sender):
+        """Обробка зміни проекту"""
+        idx = self.projectPopup.indexOfSelectedItem()
+        if idx == 0:
+            self.selected_project_id = None
+        else:
+            project = self.projects_cache[idx - 1]
+            self.selected_project_id = project['id']
+        self.reloadData()
+    
+    def reloadData(self):
+        """Перезавантажити дані задач"""
+        if self.current_filter == 'all':
+            # Отримуємо всі задачі
+            if self.selected_project_id is not None:
+                self.all_sessions = [dict(row) for row in self.db.get_all_sessions_by_project(self.selected_project_id)]
+            else:
+                self.all_sessions = [dict(row) for row in self.db.get_all_sessions()]
+        else:
+            # Отримуємо задачі за фільтром
+            if self.selected_project_id is not None:
+                self.all_sessions = [dict(row) for row in self.db.get_sessions_by_project(self.selected_project_id, self.current_filter)]
+            else:
+                self.all_sessions = [dict(row) for row in self.db.get_sessions_by_filter(self.current_filter)]
+        
+        # Оновлюємо статистику
+        total_duration = sum(s['duration'] for s in self.all_sessions)
+        hours = total_duration // 3600
+        minutes = (total_duration % 3600) // 60
+        seconds = total_duration % 60
+        self.statsLabel.setStringValue_(f"Всього: {len(self.all_sessions)} задач, {hours:02d}:{minutes:02d}:{seconds:02d}")
+        
+        self.tableView.reloadData()
+    
+    # NSTableView DataSource методи
+    def numberOfRowsInTableView_(self, tableView):
+        return len(self.all_sessions)
+    
+    def tableView_objectValueForTableColumn_row_(self, tableView, tableColumn, row):
+        if row >= len(self.all_sessions):
+            return ""
+        
+        session = self.all_sessions[row]
+        identifier = tableColumn.identifier()
+        
+        if identifier == "description":
+            return session.get('description', '')
+        elif identifier == "project":
+            project_id = session.get('project_id')
+            if project_id:
+                project = next((p for p in self.projects_cache if p['id'] == project_id), None)
+                return project['name'] if project else ''
+            return ''
+        elif identifier == "date":
+            start_time = session.get('start_time', '')
+            if start_time:
+                try:
+                    dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+                    return dt.strftime('%d.%m.%Y')
+                except:
+                    return start_time.split()[0] if ' ' in start_time else start_time
+            return ''
+        elif identifier == "time":
+            start_time = session.get('start_time', '')
+            end_time = session.get('end_time', '')
+            if start_time and end_time:
+                try:
+                    dt_start = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+                    dt_end = datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S')
+                    return f"{dt_start.strftime('%H:%M')} - {dt_end.strftime('%H:%M')}"
+                except:
+                    return f"{start_time.split()[1] if ' ' in start_time else start_time}"
+            return ''
+        elif identifier == "duration":
+            duration = session.get('duration', 0)
+            hours = duration // 3600
+            minutes = (duration % 3600) // 60
+            seconds = duration % 60
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        
+        return ""
+    
+    def windowDidResize_(self, notification):
+        """Обробка зміни розміру вікна - оновлюємо ширину колонок"""
+        if hasattr(self, 'tableView') and hasattr(self, 'scrollView'):
+            # Отримуємо нову ширину scrollView
+            frame = self.scrollView.frame()
+            new_width = frame.size.width
+            
+            # Оновлюємо ширину колонок пропорційно
+            columns = self.tableView.tableColumns()
+            if len(columns) >= 5:
+                columns[0].setWidth_(new_width * 0.35)  # Опис
+                columns[1].setWidth_(new_width * 0.20)  # Проект
+                columns[2].setWidth_(new_width * 0.15)  # Дата
+                columns[3].setWidth_(new_width * 0.15)  # Час
+                columns[4].setWidth_(new_width * 0.15)  # Тривалість
+
+
 class AppDelegate(NSObject):
     def applicationDidFinishLaunching_(self, notification):
         NSLog("=== AppDelegate: applicationDidFinishLaunching started ===")
@@ -2469,6 +2746,16 @@ class AppDelegate(NSObject):
             workTypesItem.setTarget_(self)
             dataMenu.addItem_(workTypesItem)
             
+            dataMenu.addItem_(NSMenuItem.separatorItem())
+            
+            # Пункт меню "Статистика (Все задачи)"
+            allTasksItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Статистика (Все задачи)", objc.selector(self.openAllTasks_, signature=b"v@:@"), "a"
+            )
+            allTasksItem.setKeyEquivalentModifierMask_(COMMAND_MASK | SHIFT_MASK)
+            allTasksItem.setTarget_(self)
+            dataMenu.addItem_(allTasksItem)
+            
             dataMenuItem.setSubmenu_(dataMenu)
 
             # Window menu
@@ -2575,6 +2862,12 @@ class AppDelegate(NSObject):
         if not hasattr(self, 'workTypesController') or self.workTypesController is None:
             self.workTypesController = WorkTypesWindowController.alloc().init()
         self.workTypesController.window.makeKeyAndOrderFront_(None)
+    
+    def openAllTasks_(self, sender):
+        """Відкрити вікно зі всіма задачами"""
+        if not hasattr(self, 'allTasksController') or self.allTasksController is None:
+            self.allTasksController = AllTasksWindowController.alloc().init()
+        self.allTasksController.showWindow()
     
     @objc.python_method
     def _setDockIcon(self):

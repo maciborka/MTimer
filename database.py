@@ -381,6 +381,72 @@ class Database:
         ''', (start_date, end_date))
         return cursor.fetchall()
     
+    def get_all_sessions(self):
+        """Отримати всі сесії (без фільтра по даті)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT s.*, p.name as project_name, p.color as project_color
+            FROM time_sessions s
+            LEFT JOIN projects p ON s.project_id = p.id
+            WHERE s.end_time IS NOT NULL
+            ORDER BY s.start_time DESC
+        ''')
+        return cursor.fetchall()
+    
+    def get_all_sessions_by_project(self, project_id):
+        """Отримати всі сесії для конкретного проекту (без фільтра по даті)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT s.*, p.name as project_name, p.color as project_color
+            FROM time_sessions s
+            LEFT JOIN projects p ON s.project_id = p.id
+            WHERE s.project_id = ? AND s.end_time IS NOT NULL
+            ORDER BY s.start_time DESC
+        ''', (project_id,))
+        return cursor.fetchall()
+    
+    def get_sessions_by_filter(self, period='week'):
+        """Отримати сесії за фільтром (today, week, month) для всіх проектів"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        if period == 'today':
+            today = datetime.now().date()
+            cursor.execute('''
+                SELECT s.*, p.name as project_name, p.color as project_color
+                FROM time_sessions s
+                LEFT JOIN projects p ON s.project_id = p.id
+                WHERE DATE(s.start_time) = ? AND s.end_time IS NOT NULL
+                ORDER BY s.start_time DESC
+            ''', (str(today),))
+        elif period == 'week':
+            today = datetime.now().date()
+            start_of_week = today - timedelta(days=today.weekday())
+            cursor.execute('''
+                SELECT s.*, p.name as project_name, p.color as project_color
+                FROM time_sessions s
+                LEFT JOIN projects p ON s.project_id = p.id
+                WHERE DATE(s.start_time) >= ? AND s.end_time IS NOT NULL
+                ORDER BY s.start_time DESC
+            ''', (str(start_of_week),))
+        elif period == 'month':
+            today = datetime.now().date()
+            start_of_month = today.replace(day=1)
+            cursor.execute('''
+                SELECT s.*, p.name as project_name, p.color as project_color
+                FROM time_sessions s
+                LEFT JOIN projects p ON s.project_id = p.id
+                WHERE DATE(s.start_time) >= ? AND s.end_time IS NOT NULL
+                ORDER BY s.start_time DESC
+            ''', (str(start_of_month),))
+        else:
+            # За замовчуванням - всі сесії
+            return self.get_all_sessions()
+        
+        return cursor.fetchall()
+    
     def close(self):
         if self.connection:
             self.connection.close()
