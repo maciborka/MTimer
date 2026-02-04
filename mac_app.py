@@ -10,16 +10,67 @@ from Cocoa import (
     NSAlert, NSAlertStyleWarning, NSAlertStyleInformational, NSView, NSColor, 
     NSMenu, NSMenuItem, NSImage, NSNotificationCenter, NSStatusBar, 
     NSVariableStatusItemLength, NSSavePanel, NSModalResponseOK, NSTabView,
-    NSTabViewItem
+    NSTabViewItem, NSStackView, NSBox
 )
-from Foundation import NSLog, NSDateFormatter, NSDateComponentsFormatter, NSBundle, NSUserNotification, NSUserNotificationCenter, NSThread
+from Foundation import NSLog, NSDateFormatter, NSDateComponentsFormatter, NSBundle, NSUserNotification, NSUserNotificationCenter, NSThread, NSString
 import os
+import sys
 from PyObjCTools import AppHelper
 from datetime import datetime
 import objc
 
 from database import Database
 from localization import t, get_localization
+
+# DEV mode: упрощённый запуск из исходников (без статус-бара и уведомлений)
+DEV_MODE = os.environ.get('MTIMER_DEV') == '1' and not getattr(sys, 'frozen', False)
+
+# Flipped контейнер для корректной вертикальной разметки сверху вниз
+class FlippedView(NSView):
+    def isFlipped(self):
+        return True
+
+
+# Кнопка удаления с hover эффектом
+class HoverDeleteButton(NSButton):
+    def initWithFrame_(self, frame):
+        self = objc.super(HoverDeleteButton, self).initWithFrame_(frame)
+        if self is None:
+            return None
+        
+        # Создаём tracking area для отслеживания мыши
+        trackingArea = objc.lookUpClass('NSTrackingArea').alloc().initWithRect_options_owner_userInfo_(
+            self.bounds(),
+            0x01 | 0x80 | 0x100,  # NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect
+            self,
+            None
+        )
+        self.addTrackingArea_(trackingArea)
+        
+        return self
+    
+    def mouseEntered_(self, event):
+        """При наведении - красный цвет"""
+        self.setContentTintColor_(NSColor.colorWithRed_green_blue_alpha_(0.95, 0.26, 0.21, 1.0))
+        self.layer().setBackgroundColor_(NSColor.colorWithRed_green_blue_alpha_(0.95, 0.26, 0.21, 0.15).CGColor())
+    
+    def mouseExited_(self, event):
+        """При уходе мыши - серый цвет"""
+        self.setContentTintColor_(NSColor.colorWithRed_green_blue_alpha_(0.6, 0.6, 0.6, 0.8))
+        self.layer().setBackgroundColor_(NSColor.colorWithWhite_alpha_(0.95, 0.7).CGColor())
+
+
+# Функция для получения базового пути (работает и в .app и в исходниках)
+def _get_base_dir():
+    """Возвращает базовую директорию приложения"""
+    import sys
+    import os
+    if getattr(sys, 'frozen', False):
+        # Запущены из .app bundle
+        return os.environ.get('RESOURCEPATH', os.path.dirname(os.path.abspath(sys.executable)))
+    else:
+        # Запущены из исходников
+        return os.path.dirname(os.path.abspath(__file__ if '__file__' in globals() else sys.argv[0]))
 
 
 
@@ -63,29 +114,38 @@ class TimeTrackerWindowController(NSObject):
         self.today_sessions = []  # Инициализируем пустой список для сессий
         self.current_filter = "week"  # По умолчанию показываем неделю
         self.selected_project_id = None  # Фильтр по проекту (None = все проекты)
-        self.setupUI()
+        self.selected_session_id = None  # Выделенная сессия для удаления/подсветки
+        # НЕ ВЫЗЫВАЕМ setupUI здесь - его вызовет AppDelegate после запуска приложения
         return self
 
     def setupUI(self):
+        NSLog("=== setupUI: Starting ===")
         # Создаем окно
+        NSLog("=== setupUI: Getting main screen ===")
         screen = NSScreen.mainScreen().frame()
+        NSLog(f"=== setupUI: Screen size: {screen.size.width} x {screen.size.height} ===")
         width, height = 900, 640
         x = (screen.size.width - width) / 2
         y = (screen.size.height - height) / 2
+        NSLog(f"=== setupUI: Window position: {x}, {y} ===")
         style = NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask
+        NSLog("=== setupUI: Creating window ===")
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(x, y, width, height), style, 2, False
         )
+        NSLog("=== setupUI: Window created ===")
         self.window.setTitle_(APP_NAME)
         
-        # Устанавливаем иконку окна
-        self._setWindowIcon(self.window)
+        # Устанавливаем иконку окна - ВРЕМЕННО ОТКЛЮЧЕНО из-за bus error
+        # NSLog("=== setupUI: Setting window icon ===")
+        # try:
+        #     self._setWindowIcon(self.window)
+        #     NSLog("=== setupUI: Window icon set successfully ===")
+        # except Exception as e:
+        #     NSLog(f"=== setupUI: Window icon error: {e} ===")
         
         # Устанавливаем минимальный размер окна
         self.window.setMinSize_((900, 640))
-        
-        # Устанавливаем делегат для обработки изменения размера и закрытия
-        self.window.setDelegate_(self)
         
         # Предотвращаем освобождение окна при скрытии
         self.window.setReleasedWhenClosed_(False)
@@ -162,7 +222,16 @@ class TimeTrackerWindowController(NSObject):
         self.addProjectBtn.setBezelStyle_(NSBezelStyleRounded)
         self.addProjectBtn.setButtonType_(1)  # NSMomentaryLightButton
         self.addProjectBtn.setTarget_(self)
-        self.addProjectBtn.setAction_(objc.selector(self.createProject_, signature=b"v@:"))
+        try:
+            # Спробуємо створити селектор
+            selector = objc.selector(self.createProject_, signature=b"v@:")
+            NSLog(f"=== Selector created: {selector} ===")
+            self.addProjectBtn.setAction_(selector)
+            NSLog("=== Action set successfully ===")
+        except Exception as e:
+            NSLog(f"=== ERROR setting action: {e} ===")
+            import traceback
+            traceback.print_exc()
         self.timerCard.addSubview_(self.addProjectBtn)
 
         self.timerLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(self.timerCard.frame().size.width - 180 - 56, rowY, 120, 28))
@@ -261,69 +330,42 @@ class TimeTrackerWindowController(NSObject):
         self.continueBtn.setAction_(objc.selector(self.continueSelected_, signature=b"v@:"))
         content.addSubview_(self.continueBtn)
 
-        # Таблица с сессиями (увеличиваем отступ сверху для кнопки)
-        tableTopMargin = 50  # отступ сверху под кнопку "Продолжить"
+        # Замість таблиці - ScrollView з StackView для списку сесій
+        tableTopMargin = 50
         tableY = 20
         tableHeight = cardY - 40 - tableTopMargin
         if tableHeight < 100:
             tableHeight = 100
-        self.tableScroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(20, tableY, width-40, tableHeight))
-        self.tableView = DeletableTableView.alloc().initWithFrame_(self.tableScroll.bounds())
-        # Ссылка на контроллер для обработки Delete
-        try:
-            self.tableView.owner = self
-        except Exception:
-            pass
-
-        col1 = NSTableColumn.alloc().initWithIdentifier_("desc")
-        col1.setWidth_(width*0.45)
-        col1.headerCell().setStringValue_(t('description_project'))
-        self.tableView.addTableColumn_(col1)
-
-        col2 = NSTableColumn.alloc().initWithIdentifier_("time")
-        col2.setWidth_(width*0.25)
-        col2.headerCell().setStringValue_(t('time'))
-        self.tableView.addTableColumn_(col2)
-
-        col3 = NSTableColumn.alloc().initWithIdentifier_("duration")
-        col3.setWidth_(width*0.15)
-        col3.headerCell().setStringValue_(t('duration'))
-        self.tableView.addTableColumn_(col3)
-
-        self.tableView.setDelegate_(self)
-        self.tableView.setDataSource_(self)
         
-        # Контекстное меню для удаления
-        contextMenu = NSMenu.alloc().init()
-        deleteItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            t('delete_session'), 
-            objc.selector(self.deleteSession_, signature=b"v@:@"),
-            ""
-        )
-        deleteItem.setTarget_(self)
-        contextMenu.addItem_(deleteItem)
-        self.tableView.setMenu_(contextMenu)
+        self.sessionsScroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(20, tableY, width-40, tableHeight))
+        self.sessionsScroll.setHasVerticalScroller_(True)
+        self.sessionsScroll.setAutohidesScrollers_(True)
+        self.sessionsScroll.setDrawsBackground_(True)
+        self.sessionsScroll.setBackgroundColor_(NSColor.controlBackgroundColor())
         
-        # Настройка цветов таблицы для тёмного режима
-        try:
-            self.tableView.setBackgroundColor_(NSColor.controlBackgroundColor())
-            # Цвет gridlines адаптивный
-            self.tableView.setGridColor_(NSColor.separatorColor())
-        except Exception:
-            pass
+        # Контейнер для списка сессий (FlippedView: начало координат сверху)
+        self.sessionsStack = FlippedView.alloc().initWithFrame_(NSMakeRect(0, 0, width-40, 100))
+        # self.sessionsStack.setOrientation_(1)  # 1 = vertical
+        # self.sessionsStack.setAlignment_(3)  # 3 = leading/left
+        # self.sessionsStack.setSpacing_(8)
         
-        self.tableScroll.setDocumentView_(self.tableView)
-        self.tableScroll.setHasVerticalScroller_(True)
-        self.tableScroll.setDrawsBackground_(True)
-        try:
-            self.tableScroll.setBackgroundColor_(NSColor.controlBackgroundColor())
-        except Exception:
-            pass
-        content.addSubview_(self.tableScroll)
+        self.sessionsScroll.setDocumentView_(self.sessionsStack)
+        content.addSubview_(self.sessionsScroll)
+
+        
+        # Устанавливаем делегат ПОСЛЕ создания всех элементов
+        self.window.setDelegate_(self)
 
         # Первичная загрузка
         self.reloadProjects()
         self.reloadSessions()
+        
+        # ТЕСТ: Перевіримо чи існує метод createProject_
+        NSLog(f"=== Testing createProject_ method exists: {hasattr(self, 'createProject_')} ===")
+        if hasattr(self, 'createProject_'):
+            NSLog("=== createProject_ method found ===")
+        else:
+            NSLog("=== ERROR: createProject_ method NOT FOUND ===")
         
         # Проверяем незавершенные сессии и восстанавливаем таймер
         self._restoreActiveSession()
@@ -360,6 +402,10 @@ class TimeTrackerWindowController(NSObject):
     
     def windowDidResize_(self, notification):
         """Обработчик изменения размера окна"""
+        # Проверяем что все элементы уже созданы
+        if not hasattr(self, 'sessionsScroll'):
+            return
+            
         # Используем размер contentView, а не frame окна
         contentFrame = self.window.contentView().frame()
         width = contentFrame.size.width
@@ -396,24 +442,24 @@ class TimeTrackerWindowController(NSObject):
             self.continueBtn.setFrame_(NSMakeRect(width-360, filterY, 140, 24))
             self.statisticsBtn.setFrame_(NSMakeRect(20, filterY - 30, 120, 24))
             
-            # Таблица - растягивается по высоте и ширине
+            # ScrollView с сессиями - растягивается по высоте и ширине
             tableTopMargin = 80  # Увеличили отступ для кнопки статистики
             tableY = 20
             tableHeight = cardY - 40 - tableTopMargin
             if tableHeight < 100:
                 tableHeight = 100
-            self.tableScroll.setFrame_(NSMakeRect(20, tableY, width-40, tableHeight))
+            self.sessionsScroll.setFrame_(NSMakeRect(20, tableY, width-40, tableHeight))
             
-            # Обновляем ширину колонок таблицы пропорционально
-            col1 = self.tableView.tableColumnWithIdentifier_("desc")
-            col2 = self.tableView.tableColumnWithIdentifier_("time")
-            col3 = self.tableView.tableColumnWithIdentifier_("duration")
-            if col1:
-                col1.setWidth_(width*0.45)
-            if col2:
-                col2.setWidth_(width*0.25)
-            if col3:
-                col3.setWidth_(width*0.15)
+            # Таблицы больше нет, используем StackView
+            # col1 = self.tableView.tableColumnWithIdentifier_("desc")
+            # col2 = self.tableView.tableColumnWithIdentifier_("time")
+            # col3 = self.tableView.tableColumnWithIdentifier_("duration")
+            # if col1:
+            #     col1.setWidth_(width*0.45)
+            # if col2:
+            #     col2.setWidth_(width*0.25)
+            # if col3:
+            #     col3.setWidth_(width*0.15)
             
         except Exception as e:
             NSLog(f"Ошибка при изменении размера окна: {e}")
@@ -463,17 +509,14 @@ class TimeTrackerWindowController(NSObject):
             self.todayTotalField.setTextColor_(NSColor.secondaryLabelColor())
             self.todayTotalField.display()
             
-            # Обновляем фон и цвета таблицы
-            self.tableView.setBackgroundColor_(NSColor.controlBackgroundColor())
-            self.tableView.setGridColor_(NSColor.separatorColor())
-            self.tableScroll.setBackgroundColor_(NSColor.controlBackgroundColor())
-            self.tableScroll.setDrawsBackground_(True)
+            # Обновляем фон ScrollView
+            self.sessionsScroll.setBackgroundColor_(NSColor.controlBackgroundColor())
+            self.sessionsScroll.setDrawsBackground_(True)
             
             # Принудительная перерисовка всех view
             self.timerCard.display()
-            self.tableView.reloadData()
-            self.tableView.display()
-            self.tableScroll.display()
+            self.updateSessionsList()  # Перерисовываем список сессий
+            self.sessionsScroll.display()
             
             # Обновляем кнопки
             for btn in [self.todayFilterBtn, self.weekFilterBtn, self.monthFilterBtn, self.continueBtn, self.addProjectBtn]:
@@ -497,33 +540,7 @@ class TimeTrackerWindowController(NSObject):
             NSLog(f"Ошибка при обновлении темы: {e}")
 
     # Табличные данные
-    def numberOfRowsInTableView_(self, table):
-        count = len(getattr(self, 'today_sessions', []))
-        NSLog(f"numberOfRowsInTableView: возвращаем {count} строк")
-        return count
 
-    def tableView_objectValueForTableColumn_row_(self, table, col, row):
-        if row >= len(self.today_sessions):
-            NSLog(f"ОШИБКА: запрос строки {row}, но всего {len(self.today_sessions)} сессий")
-            return ""
-        session = self.today_sessions[row]
-        ident = col.identifier()
-        if ident == 'desc':
-            desc = session['description'] or (session['project_name'] or t('no_name'))
-            if session['project_name']:
-                return f"{desc}\n• {session['project_name']}"
-            return desc
-        elif ident == 'time':
-            start_dt = datetime.fromisoformat(session['start_time'])
-            if session['end_time']:
-                end_dt = datetime.fromisoformat(session['end_time'])
-                return f"{start_dt.strftime('%H:%M')} - {end_dt.strftime('%H:%M')}"
-            else:
-                return f"{start_dt.strftime('%H:%M')} - {t('running')}"
-        elif ident == 'duration':
-            d = session['duration'] or 0
-            return self.formatDuration(d)
-        return ''
 
     # Данные и действия
     def reloadProjects(self):
@@ -552,7 +569,7 @@ class TimeTrackerWindowController(NSObject):
         # Загружаем сессии в зависимости от выбранного фильтра и проекта
         if self.selected_project_id is not None:
             # Фильтр по проекту
-            self.today_sessions = list(self.db.get_sessions_by_project(self.selected_project_id, self.current_filter))
+            self.today_sessions = [dict(row) for row in self.db.get_sessions_by_project(self.selected_project_id, self.current_filter)]
             period_total = self.db.get_project_total(self.selected_project_id, self.current_filter)
             
             # Находим проект для отображения ставки
@@ -572,15 +589,15 @@ class TimeTrackerWindowController(NSObject):
         else:
             # Все проекты
             if self.current_filter == "today":
-                self.today_sessions = list(self.db.get_today_sessions())
+                self.today_sessions = [dict(row) for row in self.db.get_today_sessions()]
                 period_total = sum([(s['duration'] or 0) for s in self.today_sessions])
                 period_label = t('today_label')
             elif self.current_filter == "week":
-                self.today_sessions = list(self.db.get_week_sessions())
+                self.today_sessions = [dict(row) for row in self.db.get_week_sessions()]
                 period_total = self.db.get_week_total()
                 period_label = t('week_label')
             else:  # month
-                self.today_sessions = list(self.db.get_month_sessions())
+                self.today_sessions = [dict(row) for row in self.db.get_month_sessions()]
                 period_total = self.db.get_month_total()
                 period_label = t('month_label')
         
@@ -592,10 +609,165 @@ class TimeTrackerWindowController(NSObject):
         self.todayTotalField.setStringValue_(self.formatDuration(today_total))
         self.weekTotalField.setStringValue_(f"{t('total')}: {self.formatDuration(period_total)}")
         
-        self.tableView.reloadData()
-        self._updateFilterButtons()
+        # Оновлюємо StackView з сесіями
+        self.updateSessionsList()
+        self.updateFilterButtons()
     
-    def _updateFilterButtons(self):
+    @objc.python_method
+    def updateSessionsList(self):
+        """Оновлює список сесій в контейнері"""
+        try:
+            NSLog(f"=== updateSessionsList: {len(self.today_sessions)} sessions ===")
+            
+            # ПОЛНОСТЬЮ пересоздаём контейнер - это избежит проблем с кешированием
+            # Удаляем старый контейнер из scroll view
+            if hasattr(self, 'sessionsStack') and self.sessionsStack is not None:
+                self.sessionsScroll.setDocumentView_(None)
+            
+            # Создаём новый контейнер
+            scroll_width = self.sessionsScroll.frame().size.width
+            new_height = max(100, len(self.today_sessions) * 45 + 10)
+            self.sessionsStack = FlippedView.alloc().initWithFrame_(NSMakeRect(0, 0, scroll_width, new_height))
+            
+            NSLog(f"=== Container created, size: {scroll_width} x {new_height} ===")
+            
+            # Додаємо нові сесії
+            y_offset = 0
+            for i, session in enumerate(self.today_sessions):
+                NSLog(f"=== Creating view {i+1}/{len(self.today_sessions)} for session: {session.get('description', 'no desc')} ===")
+                sessionView = self.createSessionView(session)
+                # Позиционируем от верхнего края
+                sessionView.setFrame_(NSMakeRect(10, y_offset, scroll_width - 20, 40))
+                self.sessionsStack.addSubview_(sessionView)
+                y_offset += 45
+            
+            # Устанавливаем новый контейнер в scroll view
+            self.sessionsScroll.setDocumentView_(self.sessionsStack)
+            
+            # Явно обновляем scroll view
+            self.sessionsScroll.setNeedsDisplay_(True)
+            NSLog(f"=== Container updated with {len(self.today_sessions)} items, height: {new_height} ===")
+        except Exception as e:
+            NSLog(f"=== ERROR updating sessions list: {e} ===")
+            import traceback
+            traceback.print_exc()
+    
+    @objc.python_method
+    def createSessionView(self, session):
+        """Створює візуальний елемент для однієї сесії"""
+        try:
+            NSLog(f"=== createSessionView START ===")
+            width = self.sessionsScroll.frame().size.width - 20
+            NSLog(f"=== width: {width} ===")
+            
+            # Контейнер для сесії
+            container = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, width, 40))
+            container.setWantsLayer_(True)
+            # Подсветка выбранной сессии
+            session_id = session.get('id', -1)
+            if self.selected_session_id == session_id:
+                try:
+                    container.layer().setBackgroundColor_(NSColor.selectedTextBackgroundColor().colorWithAlphaComponent_(0.12).CGColor())
+                except Exception:
+                    container.layer().setBackgroundColor_(NSColor.controlHighlightColor().CGColor())
+            NSLog(f"=== Container created ===")
+
+            # Опис
+            description = session.get('description', '') or t('no_description')
+            NSLog(f"=== Creating label ===")
+            descLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(10, 20, width*0.5, 18))
+            descLabel.setStringValue_(str(description))
+            descLabel.setBezeled_(False)
+            descLabel.setDrawsBackground_(False)
+            descLabel.setEditable_(False)
+            descLabel.setSelectable_(False)
+            descLabel.setFont_(NSFont.systemFontOfSize_(13))
+            descLabel.setTextColor_(NSColor.labelColor())
+            container.addSubview_(descLabel)
+            NSLog(f"=== Description label added ===")
+            
+            # Час
+            start_time = session.get('start_time', '')
+            if start_time:
+                try:
+                    start_dt = datetime.fromisoformat(str(start_time))
+                    end_time = session.get('end_time', '')
+                    if end_time:
+                        end_dt = datetime.fromisoformat(str(end_time))
+                        time_str = f"{start_dt.strftime('%H:%M')} - {end_dt.strftime('%H:%M')}"
+                    else:
+                        time_str = f"{start_dt.strftime('%H:%M')} - {t('running')}"
+                except:
+                    time_str = ""
+            else:
+                time_str = ""
+            
+            NSLog(f"=== Creating time label ===")
+            timeLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(width*0.5 + 10, 20, width*0.25, 18))
+            timeLabel.setStringValue_(time_str)
+            timeLabel.setBezeled_(False)
+            timeLabel.setDrawsBackground_(False)
+            timeLabel.setEditable_(False)
+            timeLabel.setSelectable_(False)
+            timeLabel.setFont_(NSFont.systemFontOfSize_(12))
+            timeLabel.setTextColor_(NSColor.secondaryLabelColor())
+            container.addSubview_(timeLabel)
+            NSLog(f"=== Time label added ===")
+            
+            # Тривалість
+            duration = session.get('duration', 0) or 0
+            duration_str = self.formatDuration(int(duration))
+            
+            NSLog(f"=== Creating duration label ===")
+            durationLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(width*0.75 + 10, 20, width*0.2, 18))
+            durationLabel.setStringValue_(duration_str)
+            durationLabel.setBezeled_(False)
+            durationLabel.setDrawsBackground_(False)
+            durationLabel.setEditable_(False)
+            durationLabel.setSelectable_(False)
+            durationLabel.setFont_(NSFont.systemFontOfSize_(12))
+            durationLabel.setTextColor_(NSColor.secondaryLabelColor())
+            container.addSubview_(durationLabel)
+            NSLog(f"=== Duration label added ===")
+
+            # Кнопка удаления в стиле macOS с hover эффектом
+            deleteBtn = HoverDeleteButton.alloc().initWithFrame_(NSMakeRect(width - 28, 12, 18, 18))
+            deleteBtn.setTitle_("✕")
+            deleteBtn.setBordered_(False)
+            deleteBtn.setBezelStyle_(0)  # NSBezelStyleRounded
+            deleteBtn.setFont_(NSFont.systemFontOfSize_weight_(11, -0.4))  # Тонкий шрифт
+            deleteBtn.setTarget_(self)
+            deleteBtn.setAction_(objc.selector(self.deleteSessionButton_, signature=b"v@:"))
+            deleteBtn.setTag_(session_id)
+            # Серый цвет по умолчанию
+            deleteBtn.setContentTintColor_(NSColor.colorWithRed_green_blue_alpha_(0.6, 0.6, 0.6, 0.8))
+            deleteBtn.setWantsLayer_(True)
+            deleteBtn.layer().setCornerRadius_(9)  # Круглая кнопка
+            deleteBtn.layer().setBackgroundColor_(NSColor.colorWithWhite_alpha_(0.95, 0.7).CGColor())
+            container.addSubview_(deleteBtn)
+            NSLog(f"=== Delete button added ===")
+            
+            # Кнопка выбора (прозрачная, на весь ряд кроме области удаления)
+            # Добавляем последней, чтобы она была поверх всех текстовых полей
+            selectBtn = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, width - 30, 40))
+            selectBtn.setBordered_(False)
+            selectBtn.setTitle_("")
+            selectBtn.setTarget_(self)
+            selectBtn.setAction_(objc.selector(self.selectSession_, signature=b"v@:"))
+            selectBtn.setTag_(session_id)
+            container.addSubview_(selectBtn)
+            NSLog(f"=== Select button added ===")
+            
+            NSLog(f"=== createSessionView END - returning container ===")
+            return container
+        except Exception as e:
+            NSLog(f"=== ERROR in createSessionView: {e} ===")
+            import traceback
+            traceback.print_exc()
+            # Возвращаем пустой контейнер если ошибка
+            return NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 100, 40))
+    
+    def updateFilterButtons(self):
         """Подсвечивает активный фильтр"""
         # Сбрасываем все кнопки
         try:
@@ -608,27 +780,52 @@ class TimeTrackerWindowController(NSObject):
         self.monthFilterBtn.setState_(NSControlStateValueOn if self.current_filter == "month" else NSControlStateValueOff)
     
     def setFilterToday_(self, _):
-        if self.current_filter == "today":
-            # Если уже выбрана эта кнопка - отключаем фильтр
-            self.current_filter = None
-        else:
-            self.current_filter = "today"
+        NSLog(f"=== setFilterToday called, current_filter was: {self.current_filter} ===")
+        self.current_filter = "today"
+        NSLog(f"=== setFilterToday new filter: {self.current_filter} ===")
         self.reloadSessions()
+
+    def selectSession_(self, sender):
+        try:
+            session_id = sender.tag()
+            self.selected_session_id = session_id
+            self.updateSessionsList()
+        except Exception as e:
+            NSLog(f"selectSession_ error: {e}")
+
+    def deleteSessionButton_(self, sender):
+        try:
+            session_id = sender.tag()
+            if session_id is None or session_id < 0:
+                return
+            # Подтверждение удаления
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('delete_confirm_title'))
+            alert.setInformativeText_(t('delete_confirm_message'))
+            alert.addButtonWithTitle_(t('delete'))
+            alert.addButtonWithTitle_(t('cancel'))
+            alert.setAlertStyle_(NSAlertStyleWarning)
+            response = alert.runModal()
+            # NSAlertFirstButtonReturn == 1000
+            if response == 1000:
+                # Удаляем запись
+                self.db.delete_session(session_id)
+                if self.selected_session_id == session_id:
+                    self.selected_session_id = None
+                self.reloadSessions()
+        except Exception as e:
+            NSLog(f"deleteSessionButton_ error: {e}")
     
     def setFilterWeek_(self, _):
-        if self.current_filter == "week":
-            # Если уже выбрана эта кнопка - отключаем фильтр
-            self.current_filter = None
-        else:
-            self.current_filter = "week"
+        NSLog(f"=== setFilterWeek called, current_filter was: {self.current_filter} ===")
+        self.current_filter = "week"
+        NSLog(f"=== setFilterWeek new filter: {self.current_filter} ===")
         self.reloadSessions()
     
     def setFilterMonth_(self, _):
-        if self.current_filter == "month":
-            # Если уже выбрана эта кнопка - отключаем фильтр
-            self.current_filter = None
-        else:
-            self.current_filter = "month"
+        NSLog(f"=== setFilterMonth called, current_filter was: {self.current_filter} ===")
+        self.current_filter = "month"
+        NSLog(f"=== setFilterMonth new filter: {self.current_filter} ===")
         self.reloadSessions()
     
     def projectSelected_(self, sender):
@@ -647,12 +844,15 @@ class TimeTrackerWindowController(NSObject):
     
     def deleteSession_(self, sender):
         """Удаление выбранной сессии"""
-        row = self.tableView.selectedRow()
-        if row < 0 or row >= len(getattr(self, 'today_sessions', [])):
-            return
+        # TODO: Реализовать выбор сессии для удаления (пока таблицы нет)
+        return
         
-        session = self.today_sessions[row]
-        session_id = session['id']
+        # row = self.tableView.selectedRow()
+        # if row < 0 or row >= len(getattr(self, 'today_sessions', [])):
+        #     return
+        
+        # session = self.today_sessions[row]
+        # session_id = session['id']
         
         # Показываем диалог подтверждения
         alert = NSAlert.alloc().init()
@@ -748,8 +948,11 @@ class TimeTrackerWindowController(NSObject):
         self.reloadSessions()
 
     def createProject_(self, _):
+        NSLog("=== createProject_ CALLED ===")
+        print("[DEBUG] createProject_ function called")
         # Alert с двумя полями: название и ставка
         alert = NSAlert.alloc().init()
+        NSLog("=== NSAlert created ===")
         alert.setMessageText_(t('new_project'))
         alert.setInformativeText_(f"{t('project_name')}\n{t('hourly_rate')}")
         alert.addButtonWithTitle_(t('create'))
@@ -793,7 +996,7 @@ class TimeTrackerWindowController(NSObject):
         
         # Возвращаем фокус окну и обновляем отображение
         self.window.makeKeyAndOrderFront_(None)
-        self.tableView.setNeedsDisplay_(True)
+        # self.tableView.setNeedsDisplay_(True)  # таблицы больше нет
         
         if resp == 1000:  # First button
             name = nameField.stringValue().strip()
@@ -806,12 +1009,35 @@ class TimeTrackerWindowController(NSObject):
                 hourly_rate = 0
             
             if name:
-                res = self.db.create_project(name, hourly_rate=hourly_rate)
-                if res:
-                    self.reloadProjects()
-                    # Выбираем созданный проект (с учетом новой метки со ставкой)
-                    rate_display = f" (${hourly_rate:.0f}/ч)" if hourly_rate > 0 else ""
-                    self.projectPopup.selectItemWithTitle_(f"{name}{rate_display}")
+                try:
+                    NSLog(f"Attempting to create project: {name}, rate: {hourly_rate}")
+                    NSLog(f"Database path: {self.db.db_path}")
+                    res = self.db.create_project(name, hourly_rate=hourly_rate)
+                    NSLog(f"Project creation result: {res}")
+                    if res:
+                        self.reloadProjects()
+                        # Выбираем созданный проект (с учетом новой метки со ставкой)
+                        rate_display = f" (${hourly_rate:.0f}/ч)" if hourly_rate > 0 else ""
+                        self.projectPopup.selectItemWithTitle_(f"{name}{rate_display}")
+                        NSLog(f"Project '{name}' created successfully with ID: {res}")
+                    else:
+                        NSLog(f"Failed to create project '{name}' - project with this name may already exist")
+                        error_alert = NSAlert.alloc().init()
+                        error_alert.setMessageText_(t('error'))
+                        error_alert.setInformativeText_(t('project_exists') if hasattr(t, '__call__') else f"Проект з назвою '{name}' вже існує")
+                        error_alert.addButtonWithTitle_("OK")
+                        error_alert.runModal()
+                except Exception as e:
+                    NSLog(f"Error creating project: {e}")
+                    import traceback
+                    NSLog(f"Traceback: {traceback.format_exc()}")
+                    error_alert = NSAlert.alloc().init()
+                    error_alert.setMessageText_(t('error'))
+                    error_alert.setInformativeText_(f"Помилка при створенні проекту: {str(e)}")
+                    error_alert.addButtonWithTitle_("OK")
+                    error_alert.runModal()
+            else:
+                NSLog("Project name is empty")
 
     def toggleTimer_(self, _):
         if not self.timer_running:
@@ -962,13 +1188,14 @@ class TimeTrackerWindowController(NSObject):
                 pass
 
     def continueSelected_(self, _):
-        row = self.tableView.selectedRow()
-        if row < 0 or row >= len(self.today_sessions):
+        # TODO: Реализовать выбор последней сессии для продолжения
+        if not self.today_sessions:
             return
+        # Берем последнюю сессию
+        s = self.today_sessions[0]
         if self.timer_running:
             self.showWarning_(t('stop_current_timer'))
             return
-        s = self.today_sessions[row]
         # Выбираем проект по id, а не по названию
         try:
             proj_id = s['project_id']
@@ -1034,7 +1261,7 @@ class TimeTrackerWindowController(NSObject):
     def _setWindowIcon(self, window):
         """Устанавливает иконку для окна"""
         try:
-            base = os.path.dirname(__file__)
+            base = _get_base_dir()
             candidates = [
                 os.path.join(base, "assets", "app_icon.icns"),
                 os.path.join(base, "assets", "app_icon.png"),
@@ -1153,6 +1380,14 @@ class ProjectSettingsWindowController(NSObject):
         self.rateField.setPlaceholderString_("0")
         dataView.addSubview_(self.rateField)
         
+        # Кнопка Новый проект
+        newProjectBtn = NSButton.alloc().initWithFrame_(NSMakeRect(240, labelY - 40, 120, 28))
+        newProjectBtn.setTitle_("+ " + t('new_project'))
+        newProjectBtn.setBezelStyle_(NSBezelStyleRounded)
+        newProjectBtn.setTarget_(self)
+        newProjectBtn.setAction_(objc.selector(self.createNewProject_, signature=b"v@:"))
+        dataView.addSubview_(newProjectBtn)
+        
         # Кнопка Сохранить
         self.saveBtn = NSButton.alloc().initWithFrame_(NSMakeRect(width-150, labelY - 40, 100, 28))
         self.saveBtn.setTitle_(t('save'))
@@ -1260,7 +1495,7 @@ class ProjectSettingsWindowController(NSObject):
             from datetime import datetime
             
             # Используем ту же логику поиска БД, что и в database.py
-            base_dir = os.path.dirname(__file__)
+            base_dir = _get_base_dir()
             db_path = os.path.join(base_dir, 'timetracker.db')
             
             # Если БД нет в рабочей папке, ищем в Application Support
@@ -1319,7 +1554,7 @@ class ProjectSettingsWindowController(NSObject):
             from Cocoa import NSOpenPanel
             
             # Находим путь к текущей базе данных
-            base_dir = os.path.dirname(__file__)
+            base_dir = _get_base_dir()
             db_path = os.path.join(base_dir, 'timetracker.db')
             
             # Если БД нет в рабочей папке, используем Application Support
@@ -1462,23 +1697,620 @@ class ProjectSettingsWindowController(NSObject):
             alert.setInformativeText_("Не удалось обновить проект")
             alert.addButtonWithTitle_(t('ok'))
             alert.runModal()
+    
+    def createNewProject_(self, sender):
+        """Створення нового проекту"""
+        NSLog("=== createNewProject_ CALLED in ProjectSettings ===")
+        print("[DEBUG] createNewProject_ function called in ProjectSettings")
+        
+        # Очищаємо поля
+        self.nameField.setStringValue_("")
+        self.rateField.setStringValue_("0")
+        
+        # Знімаємо виділення в таблиці
+        self.tableView.deselectAll_(None)
+        
+        # Фокусуємось на полі імені
+        self.window.makeFirstResponder_(self.nameField)
+        
+        # Змінюємо текст кнопки "Зберегти" на "Створити"
+        self.saveBtn.setTitle_(t('create'))
+        self.saveBtn.setAction_(objc.selector(self.createProjectAction_, signature=b"v@:"))
+    
+    def createProjectAction_(self, sender):
+        """Виконання створення нового проекту"""
+        NSLog("=== createProjectAction_ CALLED ===")
+        new_name = self.nameField.stringValue().strip()
+        try:
+            new_rate = float(self.rateField.stringValue())
+        except ValueError:
+            new_rate = 0
+        
+        if not new_name:
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('error'))
+            alert.setInformativeText_("Введіть назву проекту")
+            alert.addButtonWithTitle_(t('ok'))
+            alert.runModal()
+            return
+        
+        # Створюємо проект в БД
+        NSLog(f"Attempting to create project: {new_name}, rate: {new_rate}")
+        NSLog(f"Database path: {self.db.db_path}")
+        
+        try:
+            project_id = self.db.create_project(new_name, hourly_rate=new_rate)
+            NSLog(f"Project creation result: {project_id}")
+            
+            if project_id:
+                NSLog(f"Project '{new_name}' created successfully with ID: {project_id}")
+                
+                # Оновлюємо таблицю
+                self.reloadProjects()
+                self.tableView.reloadData()
+                
+                # Очищаємо поля
+                self.nameField.setStringValue_("")
+                self.rateField.setStringValue_("0")
+                
+                # Повертаємо кнопку до режиму "Зберегти"
+                self.saveBtn.setTitle_(t('save'))
+                self.saveBtn.setAction_(objc.selector(self.saveProject_, signature=b"v@:"))
+                
+                # Оновлюємо основне вікно
+                try:
+                    app = NSApp.delegate()
+                    if app and hasattr(app, 'controller') and app.controller is not None:
+                        app.controller.reloadProjects()
+                except Exception as e:
+                    NSLog(f"Error updating main window: {e}")
+            else:
+                NSLog(f"Failed to create project '{new_name}' - project with this name may already exist")
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_(t('error'))
+                alert.setInformativeText_(f"Проект з назвою '{new_name}' вже існує")
+                alert.addButtonWithTitle_(t('ok'))
+                alert.runModal()
+        except Exception as e:
+            NSLog(f"Error creating project: {e}")
+            import traceback
+            NSLog(f"Traceback: {traceback.format_exc()}")
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('error'))
+            alert.setInformativeText_(f"Помилка при створенні проекту: {str(e)}")
+            alert.addButtonWithTitle_(t('ok'))
+            alert.runModal()
+
+
+class CompaniesWindowController(NSObject):
+    """Окно управления компаниями"""
+    def init(self):
+        self = objc.super(CompaniesWindowController, self).init()
+        if self is None:
+            return None
+        self.db = Database()
+        self.companies = []
+        self.setupUI()
+        self.reloadData()
+        return self
+    
+    def setupUI(self):
+        # Создаем окно
+        screen = NSScreen.mainScreen().frame()
+        width, height = 600, 400
+        x = (screen.size.width - width) / 2
+        y = (screen.size.height - height) / 2
+        
+        self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(x, y, width, height),
+            NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask,
+            2,
+            False
+        )
+        self.window.setTitle_("Управление компаниями")
+        self.window.setReleasedWhenClosed_(False)
+        
+        content = self.window.contentView()
+        
+        # Таблица компаний
+        scrollView = NSScrollView.alloc().initWithFrame_(NSMakeRect(20, 60, width-40, height-100))
+        scrollView.setHasVerticalScroller_(True)
+        
+        self.tableView = NSTableView.alloc().init()
+        self.tableView.setDelegate_(self)
+        self.tableView.setDataSource_(self)
+        
+        col1 = NSTableColumn.alloc().initWithIdentifier_("code")
+        col1.setTitle_("Код")
+        col1.setWidth_(100)
+        self.tableView.addTableColumn_(col1)
+        
+        col2 = NSTableColumn.alloc().initWithIdentifier_("name")
+        col2.setTitle_("Название компании")
+        col2.setWidth_(400)
+        self.tableView.addTableColumn_(col2)
+        
+        scrollView.setDocumentView_(self.tableView)
+        content.addSubview_(scrollView)
+        
+        # Кнопки
+        addBtn = NSButton.alloc().initWithFrame_(NSMakeRect(20, 20, 100, 32))
+        addBtn.setTitle_("Добавить")
+        addBtn.setBezelStyle_(NSBezelStyleRounded)
+        addBtn.setTarget_(self)
+        addBtn.setAction_(objc.selector(self.addCompany_, signature=b"v@:@"))
+        content.addSubview_(addBtn)
+        
+        editBtn = NSButton.alloc().initWithFrame_(NSMakeRect(130, 20, 120, 32))
+        editBtn.setTitle_("Редактировать")
+        editBtn.setBezelStyle_(NSBezelStyleRounded)
+        editBtn.setTarget_(self)
+        editBtn.setAction_(objc.selector(self.editCompany_, signature=b"v@:@"))
+        content.addSubview_(editBtn)
+        
+        delBtn = NSButton.alloc().initWithFrame_(NSMakeRect(260, 20, 100, 32))
+        delBtn.setTitle_("Удалить")
+        delBtn.setBezelStyle_(NSBezelStyleRounded)
+        delBtn.setTarget_(self)
+        delBtn.setAction_(objc.selector(self.deleteCompany_, signature=b"v@:@"))
+        content.addSubview_(delBtn)
+    
+    def reloadData(self):
+        self.companies = self.db.get_all_companies()
+        if self.tableView:
+            self.tableView.reloadData()
+    
+    def numberOfRowsInTableView_(self, tableView):
+        return len(self.companies)
+    
+    def tableView_objectValueForTableColumn_row_(self, tableView, tableColumn, row):
+        if row >= len(self.companies):
+            return ""
+        company = self.companies[row]
+        identifier = tableColumn.identifier()
+        if identifier == "code":
+            return company['code']
+        elif identifier == "name":
+            return company['name']
+        return ""
+    
+    def addCompany_(self, sender):
+        # Создаем диалог с полями ввода
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_("Новая компания")
+        alert.setInformativeText_("Введите идентификационный код и полное название компании")
+        alert.addButtonWithTitle_("Создать")
+        alert.addButtonWithTitle_("Отмена")
+        
+        # Создаем view с полями ввода
+        accessoryView = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 300, 110))
+        
+        # Поле "Код"
+        codeLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 85, 100, 20))
+        codeLabel.setStringValue_("Код:")
+        codeLabel.setBezeled_(False)
+        codeLabel.setDrawsBackground_(False)
+        codeLabel.setEditable_(False)
+        codeLabel.setSelectable_(False)
+        accessoryView.addSubview_(codeLabel)
+        
+        codeField = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 60, 300, 25))
+        codeField.setPlaceholderString_("Например: 12345678")
+        accessoryView.addSubview_(codeField)
+        
+        # Поле "Название"
+        nameLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 35, 100, 20))
+        nameLabel.setStringValue_("Название:")
+        nameLabel.setBezeled_(False)
+        nameLabel.setDrawsBackground_(False)
+        nameLabel.setEditable_(False)
+        nameLabel.setSelectable_(False)
+        accessoryView.addSubview_(nameLabel)
+        
+        nameField = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 10, 300, 25))
+        nameField.setPlaceholderString_("Полное название компании")
+        accessoryView.addSubview_(nameField)
+        
+        alert.setAccessoryView_(accessoryView)
+        alert.window().setInitialFirstResponder_(codeField)
+        
+        if alert.runModal() == 1000:
+            code = codeField.stringValue().strip()
+            name = nameField.stringValue().strip()
+            
+            if not code or not name:
+                errorAlert = NSAlert.alloc().init()
+                errorAlert.setMessageText_("Ошибка")
+                errorAlert.setInformativeText_("Код и название обязательны для заполнения")
+                errorAlert.addButtonWithTitle_("OK")
+                errorAlert.runModal()
+                return
+            
+            if self.db.create_company(code, name):
+                self.reloadData()
+            else:
+                errorAlert = NSAlert.alloc().init()
+                errorAlert.setMessageText_("Ошибка")
+                errorAlert.setInformativeText_("Компания с таким кодом уже существует")
+                errorAlert.addButtonWithTitle_("OK")
+                errorAlert.runModal()
+    
+    def editCompany_(self, sender):
+        # Проверяем, выбрана ли строка
+        row = self.tableView.selectedRow()
+        if row < 0 or row >= len(self.companies):
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Ошибка")
+            alert.setInformativeText_("Выберите компанию для редактирования")
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            return
+        
+        company = self.companies[row]
+        
+        # Создаем диалог с полями ввода
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_("Редактирование компании")
+        alert.setInformativeText_("Измените код и название компании")
+        alert.addButtonWithTitle_("Сохранить")
+        alert.addButtonWithTitle_("Отмена")
+        
+        # Создаем view с полями ввода
+        accessoryView = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 300, 110))
+        
+        # Поле "Идентификационный код"
+        codeLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 85, 200, 20))
+        codeLabel.setStringValue_("Идентификационный код:")
+        codeLabel.setBezeled_(False)
+        codeLabel.setDrawsBackground_(False)
+        codeLabel.setEditable_(False)
+        codeLabel.setSelectable_(False)
+        accessoryView.addSubview_(codeLabel)
+        
+        codeField = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 60, 300, 25))
+        codeField.setStringValue_(company['code'])
+        codeField.setPlaceholderString_("Например: 12345678")
+        accessoryView.addSubview_(codeField)
+        
+        # Поле "Название"
+        nameLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 35, 100, 20))
+        nameLabel.setStringValue_("Название:")
+        nameLabel.setBezeled_(False)
+        nameLabel.setDrawsBackground_(False)
+        nameLabel.setEditable_(False)
+        nameLabel.setSelectable_(False)
+        accessoryView.addSubview_(nameLabel)
+        
+        nameField = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 10, 300, 25))
+        nameField.setStringValue_(company['name'])
+        nameField.setPlaceholderString_("Полное название компании")
+        accessoryView.addSubview_(nameField)
+        
+        alert.setAccessoryView_(accessoryView)
+        alert.window().setInitialFirstResponder_(codeField)
+        
+        if alert.runModal() == 1000:
+            code = codeField.stringValue().strip()
+            name = nameField.stringValue().strip()
+            
+            if not code or not name:
+                errorAlert = NSAlert.alloc().init()
+                errorAlert.setMessageText_("Ошибка")
+                errorAlert.setInformativeText_("Код и название обязательны для заполнения")
+                errorAlert.addButtonWithTitle_("OK")
+                errorAlert.runModal()
+                return
+            
+            if self.db.update_company(company['id'], code, name):
+                self.reloadData()
+            else:
+                errorAlert = NSAlert.alloc().init()
+                errorAlert.setMessageText_("Ошибка")
+                errorAlert.setInformativeText_("Компания с таким кодом уже существует")
+                errorAlert.addButtonWithTitle_("OK")
+                errorAlert.runModal()
+    
+    def deleteCompany_(self, sender):
+        row = self.tableView.selectedRow()
+        if row < 0 or row >= len(self.companies):
+            return
+        
+        company = self.companies[row]
+        if not self.db.delete_company(company['id']):
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Ошибка")
+            alert.setInformativeText_("Невозможно удалить компанию, так как с ней связаны проекты")
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            return
+        
+        self.reloadData()
+
+
+class WorkTypesWindowController(NSObject):
+    """Окно управления видами работ"""
+    def init(self):
+        self = objc.super(WorkTypesWindowController, self).init()
+        if self is None:
+            return None
+        self.db = Database()
+        self.work_types = []
+        self.setupUI()
+        self.reloadData()
+        return self
+    
+    def setupUI(self):
+        # Создаем окно
+        screen = NSScreen.mainScreen().frame()
+        width, height = 600, 400
+        x = (screen.size.width - width) / 2
+        y = (screen.size.height - height) / 2
+        
+        self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(x, y, width, height),
+            NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask,
+            2,
+            False
+        )
+        self.window.setTitle_("Управление видами работ")
+        self.window.setReleasedWhenClosed_(False)
+        
+        content = self.window.contentView()
+        
+        # Таблица видов работ
+        scrollView = NSScrollView.alloc().initWithFrame_(NSMakeRect(20, 60, width-40, height-100))
+        scrollView.setHasVerticalScroller_(True)
+        
+        self.tableView = NSTableView.alloc().init()
+        self.tableView.setDelegate_(self)
+        self.tableView.setDataSource_(self)
+        
+        col1 = NSTableColumn.alloc().initWithIdentifier_("name")
+        col1.setTitle_("Название")
+        col1.setWidth_(200)
+        self.tableView.addTableColumn_(col1)
+        
+        col2 = NSTableColumn.alloc().initWithIdentifier_("description")
+        col2.setTitle_("Описание")
+        col2.setWidth_(350)
+        self.tableView.addTableColumn_(col2)
+        
+        scrollView.setDocumentView_(self.tableView)
+        content.addSubview_(scrollView)
+        
+        # Кнопки
+        addBtn = NSButton.alloc().initWithFrame_(NSMakeRect(20, 20, 100, 32))
+        addBtn.setTitle_("Добавить")
+        addBtn.setBezelStyle_(NSBezelStyleRounded)
+        addBtn.setTarget_(self)
+        addBtn.setAction_(objc.selector(self.addWorkType_, signature=b"v@:@"))
+        content.addSubview_(addBtn)
+        
+        editBtn = NSButton.alloc().initWithFrame_(NSMakeRect(130, 20, 120, 32))
+        editBtn.setTitle_("Редактировать")
+        editBtn.setBezelStyle_(NSBezelStyleRounded)
+        editBtn.setTarget_(self)
+        editBtn.setAction_(objc.selector(self.editWorkType_, signature=b"v@:@"))
+        content.addSubview_(editBtn)
+        
+        delBtn = NSButton.alloc().initWithFrame_(NSMakeRect(260, 20, 100, 32))
+        delBtn.setTitle_("Удалить")
+        delBtn.setBezelStyle_(NSBezelStyleRounded)
+        delBtn.setTarget_(self)
+        delBtn.setAction_(objc.selector(self.deleteWorkType_, signature=b"v@:@"))
+        content.addSubview_(delBtn)
+    
+    def reloadData(self):
+        self.work_types = self.db.get_all_work_types()
+        if self.tableView:
+            self.tableView.reloadData()
+    
+    def numberOfRowsInTableView_(self, tableView):
+        return len(self.work_types)
+    
+    def tableView_objectValueForTableColumn_row_(self, tableView, tableColumn, row):
+        if row >= len(self.work_types):
+            return ""
+        work_type = self.work_types[row]
+        identifier = tableColumn.identifier()
+        if identifier == "name":
+            return work_type['name']
+        elif identifier == "description":
+            return work_type['description'] or ""
+        return ""
+    
+    def addWorkType_(self, sender):
+        # Создаем диалог с полями ввода
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_("Новый вид работы")
+        alert.setInformativeText_("Введите название и описание вида работы")
+        alert.addButtonWithTitle_("Создать")
+        alert.addButtonWithTitle_("Отмена")
+        
+        # Создаем view с полями ввода
+        accessoryView = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 300, 110))
+        
+        # Поле "Название"
+        nameLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 85, 100, 20))
+        nameLabel.setStringValue_("Название:")
+        nameLabel.setBezeled_(False)
+        nameLabel.setDrawsBackground_(False)
+        nameLabel.setEditable_(False)
+        nameLabel.setSelectable_(False)
+        accessoryView.addSubview_(nameLabel)
+        
+        nameField = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 60, 300, 25))
+        nameField.setPlaceholderString_("Например: Разработка")
+        accessoryView.addSubview_(nameField)
+        
+        # Поле "Описание"
+        descLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 35, 100, 20))
+        descLabel.setStringValue_("Описание:")
+        descLabel.setBezeled_(False)
+        descLabel.setDrawsBackground_(False)
+        descLabel.setEditable_(False)
+        descLabel.setSelectable_(False)
+        accessoryView.addSubview_(descLabel)
+        
+        descField = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 10, 300, 25))
+        descField.setPlaceholderString_("Краткое описание вида работы")
+        accessoryView.addSubview_(descField)
+        
+        alert.setAccessoryView_(accessoryView)
+        alert.window().setInitialFirstResponder_(nameField)
+        
+        if alert.runModal() == 1000:
+            name = nameField.stringValue().strip()
+            description = descField.stringValue().strip()
+            
+            if not name:
+                errorAlert = NSAlert.alloc().init()
+                errorAlert.setMessageText_("Ошибка")
+                errorAlert.setInformativeText_("Название обязательно для заполнения")
+                errorAlert.addButtonWithTitle_("OK")
+                errorAlert.runModal()
+                return
+            
+            if self.db.create_work_type(name, description):
+                self.reloadData()
+            else:
+                errorAlert = NSAlert.alloc().init()
+                errorAlert.setMessageText_("Ошибка")
+                errorAlert.setInformativeText_("Вид работы с таким названием уже существует")
+                errorAlert.addButtonWithTitle_("OK")
+                errorAlert.runModal()
+    
+    def editWorkType_(self, sender):
+        # Проверяем, выбрана ли строка
+        row = self.tableView.selectedRow()
+        if row < 0 or row >= len(self.work_types):
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Ошибка")
+            alert.setInformativeText_("Выберите вид работы для редактирования")
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            return
+        
+        work_type = self.work_types[row]
+        
+        # Создаем диалог с полями ввода
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_("Редактирование вида работы")
+        alert.setInformativeText_("Измените название и описание вида работы")
+        alert.addButtonWithTitle_("Сохранить")
+        alert.addButtonWithTitle_("Отмена")
+        
+        # Создаем view с полями ввода
+        accessoryView = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 300, 110))
+        
+        # Поле "Название"
+        nameLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 85, 100, 20))
+        nameLabel.setStringValue_("Название:")
+        nameLabel.setBezeled_(False)
+        nameLabel.setDrawsBackground_(False)
+        nameLabel.setEditable_(False)
+        nameLabel.setSelectable_(False)
+        accessoryView.addSubview_(nameLabel)
+        
+        nameField = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 60, 300, 25))
+        nameField.setStringValue_(work_type['name'])
+        nameField.setPlaceholderString_("Например: Разработка")
+        accessoryView.addSubview_(nameField)
+        
+        # Поле "Описание"
+        descLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 35, 100, 20))
+        descLabel.setStringValue_("Описание:")
+        descLabel.setBezeled_(False)
+        descLabel.setDrawsBackground_(False)
+        descLabel.setEditable_(False)
+        descLabel.setSelectable_(False)
+        accessoryView.addSubview_(descLabel)
+        
+        descField = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 10, 300, 25))
+        descField.setStringValue_(work_type['description'] or "")
+        descField.setPlaceholderString_("Краткое описание вида работы")
+        accessoryView.addSubview_(descField)
+        
+        alert.setAccessoryView_(accessoryView)
+        alert.window().setInitialFirstResponder_(nameField)
+        
+        if alert.runModal() == 1000:
+            name = nameField.stringValue().strip()
+            description = descField.stringValue().strip()
+            
+            if not name:
+                errorAlert = NSAlert.alloc().init()
+                errorAlert.setMessageText_("Ошибка")
+                errorAlert.setInformativeText_("Название обязательно для заполнения")
+                errorAlert.addButtonWithTitle_("OK")
+                errorAlert.runModal()
+                return
+            
+            if self.db.update_work_type(work_type['id'], name, description):
+                self.reloadData()
+            else:
+                errorAlert = NSAlert.alloc().init()
+                errorAlert.setMessageText_("Ошибка")
+                errorAlert.setInformativeText_("Вид работы с таким названием уже существует")
+                errorAlert.addButtonWithTitle_("OK")
+                errorAlert.runModal()
+    
+    def deleteWorkType_(self, sender):
+        row = self.tableView.selectedRow()
+        if row < 0 or row >= len(self.work_types):
+            return
+        
+        work_type = self.work_types[row]
+        if not self.db.delete_work_type(work_type['id']):
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Ошибка")
+            alert.setInformativeText_("Невозможно удалить вид работы, так как с ним связаны сессии")
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            return
+        
+        self.reloadData()
 
 
 class AppDelegate(NSObject):
     def applicationDidFinishLaunching_(self, notification):
-        self.controller = TimeTrackerWindowController.alloc().init()
-        # ВАЖНО: Сохраняем сильную ссылку на окно, чтобы оно не освобождалось при закрытии
-        self.mainWindow = self.controller.window
-        # Окно настроек проектов
-        self.settingsController = None
-        # Меню приложения с Cmd+Q
-        self.buildMenu()
-        # Устанавливаем иконку дока, если доступна
-        self._setDockIcon()
-        # Создаем статус-иконку в меню-баре
-        self._createStatusItem()
-        # Инициализируем её отображение
-        self.updateStatusItem()
+        NSLog("=== AppDelegate: applicationDidFinishLaunching started ===")
+        try:
+            NSLog("=== Creating TimeTrackerWindowController ===")
+            self.controller = TimeTrackerWindowController.alloc().init()
+            NSLog("=== Controller created, calling setupUI ===")
+            # ВЫЗЫВАЕМ setupUI только после полного запуска приложения
+            self.controller.setupUI()
+            NSLog("=== setupUI completed ===")
+            # ВАЖНО: Сохраняем сильную ссылку на окно, чтобы оно не освобождалось при закрытии
+            self.mainWindow = self.controller.window
+            NSLog("=== Window reference saved ===")
+            # Окно настроек проектов
+            self.settingsController = None
+            # Меню приложения с Cmd+Q
+            NSLog("=== Building menu ===")
+            self.buildMenu()
+            NSLog("=== Menu built ===")
+            # Устанавливаем иконку дока, если доступна
+            if not DEV_MODE:
+                self._setDockIcon()
+                NSLog("=== Dock icon set ===")
+            else:
+                NSLog("=== DEV_MODE active: dock icon skip ===")
+            if not DEV_MODE:
+                # Создаем статус-иконку в меню-баре (в dev-режиме не используем, чтобы избежать крашей)
+                self._createStatusItem()
+                NSLog("=== Status item created ===")
+                # Инициализируем её отображение
+                self.updateStatusItem()
+                NSLog("=== Status item updated ===")
+            else:
+                NSLog("=== DEV_MODE active: status bar disabled ===")
+            NSLog("=== AppDelegate: applicationDidFinishLaunching completed ===")
+        except Exception as e:
+            NSLog(f"=== ERROR in applicationDidFinishLaunching: {e} ===")
+            import traceback
+            traceback.print_exc()
 
     def applicationWillTerminate_(self, notification):
         try:
@@ -1614,6 +2446,31 @@ class AppDelegate(NSObject):
                 editMenu.addItem_(i)
             editMenuItem.setSubmenu_(editMenu)
 
+            # Data menu (Данные)
+            dataMenuItem = NSMenuItem.alloc().init()
+            mainMenu.addItem_(dataMenuItem)
+            dataMenu = NSMenu.alloc().initWithTitle_("Данные")
+            
+            companiesItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Компании", objc.selector(self.openCompanies_, signature=b"v@:@"), ""
+            )
+            companiesItem.setTarget_(self)
+            dataMenu.addItem_(companiesItem)
+            
+            projectsItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Проекты", objc.selector(self.openSettings_, signature=b"v@:@"), ""
+            )
+            projectsItem.setTarget_(self)
+            dataMenu.addItem_(projectsItem)
+            
+            workTypesItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Виды работ", objc.selector(self.openWorkTypes_, signature=b"v@:@"), ""
+            )
+            workTypesItem.setTarget_(self)
+            dataMenu.addItem_(workTypesItem)
+            
+            dataMenuItem.setSubmenu_(dataMenu)
+
             # Window menu
             windowMenuItem = NSMenuItem.alloc().init()
             mainMenu.addItem_(windowMenuItem)
@@ -1674,7 +2531,7 @@ class AppDelegate(NSObject):
                 python_exec = sys.executable
             else:
                 # Запущены из исходников
-                script_dir = os.path.dirname(os.path.abspath(__file__))
+                script_dir = _get_base_dir()
                 stats_script = os.path.join(script_dir, 'show_stats.py')
                 python_exec = sys.executable
             
@@ -1707,10 +2564,22 @@ class AppDelegate(NSObject):
             alert.setAlertStyle_(NSAlertStyleWarning)
             alert.runModal()
     
+    def openCompanies_(self, sender):
+        """Открыть окно управления компаниями"""
+        if not hasattr(self, 'companiesController') or self.companiesController is None:
+            self.companiesController = CompaniesWindowController.alloc().init()
+        self.companiesController.window.makeKeyAndOrderFront_(None)
+    
+    def openWorkTypes_(self, sender):
+        """Открыть окно управления видами работ"""
+        if not hasattr(self, 'workTypesController') or self.workTypesController is None:
+            self.workTypesController = WorkTypesWindowController.alloc().init()
+        self.workTypesController.window.makeKeyAndOrderFront_(None)
+    
     @objc.python_method
     def _setDockIcon(self):
         try:
-            base = os.path.dirname(__file__)
+            base = _get_base_dir()
             candidates = [
                 os.path.join(base, "assets", "app_icon.icns"),
                 os.path.join(base, "assets", "app_icon.png"),
@@ -1728,7 +2597,7 @@ class AppDelegate(NSObject):
     def _setWindowIcon(self, window):
         """Устанавливает иконку для окна"""
         try:
-            base = os.path.dirname(__file__)
+            base = _get_base_dir()
             candidates = [
                 os.path.join(base, "assets", "app_icon.icns"),
                 os.path.join(base, "assets", "app_icon.png"),
@@ -1836,7 +2705,7 @@ class AppDelegate(NSObject):
             
             last_session = sessions[0]
             project_id = last_session['project_id']
-            description = last_session['description'] or ''
+            work_type_name = last_session['work_type_name'] if last_session['work_type_name'] else ''
             project_name = last_session['project_name'] or 'Без названия'
             
             # Выбираем проект в UI
@@ -1845,15 +2714,15 @@ class AppDelegate(NSObject):
                     self.controller.projectPopup.selectItemAtIndex_(idx_popup)
                     break
             
-            # Подставляем описание
-            if description:
-                self.controller.descriptionField.setStringValue_(description)
+            # Подставляем вид работы (сейчас пока в description field, потом сделаем dropdown)
+            if work_type_name:
+                self.controller.descriptionField.setStringValue_(work_type_name)
             
             # Запускаем таймер
             self.controller.toggleTimer_(None)
             
             # Отправляем системное уведомление
-            self._sendNotification(project_name, description)
+            self._sendNotification(project_name, work_type_name)
             
         except Exception as e:
             NSLog(f"Error starting last task: {e}")
@@ -1862,6 +2731,9 @@ class AppDelegate(NSObject):
     def _sendNotification(self, project_name, task_description):
         """Отправляет системное уведомление о запуске таймера"""
         try:
+            if DEV_MODE:
+                NSLog("DEV_MODE: skip notification")
+                return
             notification = NSUserNotification.alloc().init()
             notification.setTitle_(f"⏱ {APP_NAME} - {t('timer_started')}")
             notification.setSubtitle_(project_name)
@@ -1918,7 +2790,7 @@ class AppDelegate(NSObject):
             
             selected_session = sessions[task_index]
             project_id = selected_session['project_id']
-            description = selected_session['description'] or ''
+            work_type_name = selected_session['work_type_name'] if selected_session['work_type_name'] else ''
             project_name = selected_session['project_name'] or 'Без названия'
             
             # Если таймер запущен - останавливаем текущую сессию
@@ -1935,18 +2807,18 @@ class AppDelegate(NSObject):
                     self.controller.projectPopup.selectItemAtIndex_(idx_popup)
                     break
             
-            # Подставляем описание
-            if description:
-                self.controller.descriptionField.setStringValue_(description)
+            # Подставляем вид работы
+            if work_type_name:
+                self.controller.descriptionField.setStringValue_(work_type_name)
             
             # Запускаем новый таймер (только если был запущен ранее или явно кликнули)
             if was_running or True:  # Всегда запускаем
                 self.controller.toggleTimer_(None)
                 
                 # Отправляем уведомление о переключении
-                self._sendNotification(project_name, description)
+                self._sendNotification(project_name, work_type_name)
             
-            NSLog(f"Switched to task: {project_name} - {description}")
+            NSLog(f"Switched to task: {project_name} - {work_type_name}")
             
         except Exception as e:
             NSLog(f"Error switching task: {e}")
@@ -1961,13 +2833,13 @@ class AppDelegate(NSObject):
                 if i < len(sessions):
                     session = sessions[i]
                     project_name = session['project_name'] or t('no_name')
-                    description = session['description'] or t('no_description')
+                    work_type_name = session['work_type_name'] if session['work_type_name'] else t('no_description')
                     
                     # Обрезаем длинные названия
-                    if len(description) > 30:
-                        description = description[:27] + "..."
+                    if len(work_type_name) > 30:
+                        work_type_name = work_type_name[:27] + "..."
                     
-                    item.setTitle_(f"▸ {project_name}: {description}")
+                    item.setTitle_(f"▸ {project_name}: {work_type_name}")
                     item.setEnabled_(True)
                 else:
                     item.setTitle_(f"—")

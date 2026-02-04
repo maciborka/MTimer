@@ -6,7 +6,18 @@ from localization import t
 class Database:
     def __init__(self, db_name='timetracker.db'):
         # По умолчанию база рядом с модулем (удобно в dev-режиме)
-        base_dir = os.path.dirname(__file__)
+        import sys
+        # Единый путь БД для DEV и .app, чтобы данные совпадали
+        use_app_support = (
+            getattr(sys, 'frozen', False)
+            or os.environ.get('MTIMER_USE_APP_SUPPORT') == '1'
+            or os.environ.get('MTIMER_DEV') == '1'
+        )
+        if use_app_support:
+            base_dir = os.path.expanduser('~/Library/Application Support/MacikTimer')
+        else:
+            # Запуск из исходников без DEV: база рядом с модулем
+            base_dir = os.path.dirname(os.path.abspath(__file__))
         # Если папка недоступна для записи (например, внутри .app в /Applications),
         # переносим БД в ~/Library/Application Support/MacikTimer
         try:
@@ -15,11 +26,14 @@ class Database:
             with open(test_path, 'w') as f:
                 f.write('ok')
             os.remove(test_path)
-        except Exception:
+        except Exception as e:
+            print(f"[DB] Cannot write to {base_dir}: {e}")
             app_support = os.path.expanduser('~/Library/Application Support/MacikTimer')
             os.makedirs(app_support, exist_ok=True)
             base_dir = app_support
         self.db_path = os.path.join(base_dir, db_name)
+        print(f"[DB] Initializing database at: {self.db_path}")
+        print(f"[DB] frozen={getattr(sys, 'frozen', False)}, use_app_support={use_app_support}")
         self.connection = None
         self.init_database()
     
@@ -108,10 +122,20 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
+            print(f"[DB] Creating project: name={name}, color={color}, hourly_rate={hourly_rate}")
+            print(f"[DB] Database path: {self.db_path}")
             cursor.execute('INSERT INTO projects (name, color, hourly_rate) VALUES (?, ?, ?)', (name, color, hourly_rate))
             conn.commit()
-            return cursor.lastrowid
-        except sqlite3.IntegrityError:
+            project_id = cursor.lastrowid
+            print(f"[DB] Project created successfully with ID: {project_id}")
+            return project_id
+        except sqlite3.IntegrityError as e:
+            print(f"[DB] Failed to create project - IntegrityError: {e}")
+            return None
+        except Exception as e:
+            print(f"[DB] Unexpected error creating project: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def update_project_rate(self, project_id, hourly_rate):
@@ -218,9 +242,10 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT s.*, p.name as project_name, p.color as project_color
+            SELECT s.*, p.name as project_name, p.color as project_color, w.name as work_type_name
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
+            LEFT JOIN work_types w ON s.work_type_id = w.id
             WHERE date(s.start_time) BETWEEN date(?) AND date(?)
             ORDER BY s.start_time DESC
         ''', (start_date, end_date))
@@ -231,9 +256,10 @@ class Database:
         cursor = conn.cursor()
         today = datetime.now().date().isoformat()
         cursor.execute('''
-            SELECT s.*, p.name as project_name, p.color as project_color
+            SELECT s.*, p.name as project_name, p.color as project_color, w.name as work_type_name
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
+            LEFT JOIN work_types w ON s.work_type_id = w.id
             WHERE date(s.start_time) = date(?)
             ORDER BY s.start_time DESC
         ''', (today,))
@@ -244,9 +270,10 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT s.*, p.name as project_name, p.color as project_color
+            SELECT s.*, p.name as project_name, p.color as project_color, w.name as work_type_name
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
+            LEFT JOIN work_types w ON s.work_type_id = w.id
             WHERE date(s.start_time) >= date('now', '-6 days')
             ORDER BY s.start_time DESC
         ''')
@@ -257,9 +284,10 @@ class Database:
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT s.*, p.name as project_name, p.color as project_color
+            SELECT s.*, p.name as project_name, p.color as project_color, w.name as work_type_name
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
+            LEFT JOIN work_types w ON s.work_type_id = w.id
             WHERE date(s.start_time) >= date('now', '-29 days')
             ORDER BY s.start_time DESC
         ''')
@@ -301,9 +329,10 @@ class Database:
             date_filter = "date(s.start_time) >= date('now', '-29 days')"
         
         cursor.execute(f'''
-            SELECT s.*, p.name as project_name, p.color as project_color, p.hourly_rate
+            SELECT s.*, p.name as project_name, p.color as project_color, p.hourly_rate, w.name as work_type_name
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
+            LEFT JOIN work_types w ON s.work_type_id = w.id
             WHERE s.project_id = ? AND {date_filter}
             ORDER BY s.start_time DESC
         ''', (project_id,))
@@ -339,12 +368,14 @@ class Database:
                 p.name as project_name,
                 p.color as project_color,
                 p.hourly_rate,
+                w.name as work_type_name,
                 CASE 
                     WHEN p.hourly_rate > 0 THEN (s.duration / 3600.0) * p.hourly_rate
                     ELSE 0
                 END as cost
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
+            LEFT JOIN work_types w ON s.work_type_id = w.id
             WHERE s.start_time >= ? AND s.start_time <= ?
             ORDER BY s.start_time ASC
         ''', (start_date, end_date))
