@@ -22,17 +22,17 @@ OPTIONS = {
     'argv_emulation': True,
     'iconfile': icon_path,
     'resources': resources,
-    # Явно включаем модули, которых не хватает на старте (__boot__ -> pkg_resources -> jaraco.*)
-    'packages': ['pkg_resources', 'setuptools'],
-    # Включаем только jaraco.* — autocommand/more_itertools тянутся как vendored-варианты внутри setuptools
-    'includes': ['jaraco.text', 'jaraco.functools', 'jaraco.context'],
+    'packages': ['pkg_resources', 'setuptools', 'objc', 'Foundation'],
+    'includes': ['jaraco.text', 'jaraco.functools', 'jaraco.context', 'Cocoa'],
+    # Сборка только для Apple Silicon (ARM64)
+    'arch': 'arm64',
     'plist': {
         'CFBundleName': 'MTimer',
         'CFBundleDisplayName': 'MTimer',
         'CFBundleIdentifier': 'com.macik.timer',
         # Версии для стандартного About-панеля
-        'CFBundleShortVersionString': '1.0.1',
-        'CFBundleVersion': '1',
+        'CFBundleShortVersionString': '2.0',
+        'CFBundleVersion': '2',
     # Авторские данные (будут показаны в About) — переносы строк через \n
     'NSHumanReadableCopyright': '© 2025 Maciborka Vitalik\nhttps://it-world.com.ua\nmaciborka@gmail.com',
     # Инфо-строка (устаревшая, но полезна в некоторых местах) — тоже с переносами строк

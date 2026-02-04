@@ -12,7 +12,7 @@ from Cocoa import (
     NSVariableStatusItemLength, NSSavePanel, NSModalResponseOK, NSTabView,
     NSTabViewItem, NSStackView, NSBox
 )
-from Foundation import NSLog, NSDateFormatter, NSDateComponentsFormatter, NSBundle, NSUserNotification, NSUserNotificationCenter, NSThread, NSString
+from Foundation import NSLog, NSDateFormatter, NSDateComponentsFormatter, NSBundle, NSUserNotification, NSUserNotificationCenter, NSThread, NSString, NSUserDefaults
 import os
 import sys
 from PyObjCTools import AppHelper
@@ -110,6 +110,7 @@ class TimeTrackerWindowController(NSObject):
         self.elapsed_seconds = 0
         self.update_timer_ref = None
         self.auto_refresh_ref = None
+        self.hourly_reminder_ref = None  # Таймер для часовых напоминаний
         self.projects_cache = []
         self.today_sessions = []  # Инициализируем пустой список для сессий
         self.current_filter = "week"  # По умолчанию показываем неделю
@@ -291,15 +292,6 @@ class TimeTrackerWindowController(NSObject):
         self.monthFilterBtn.setTarget_(self)
         self.monthFilterBtn.setAction_(objc.selector(self.setFilterMonth_, signature=b"v@:"))
         content.addSubview_(self.monthFilterBtn)
-        
-        # Кнопка Статистика (под кнопкой "Сегодня")
-        self.statisticsBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX, filterY - 30, 120, 24))
-        self.statisticsBtn.setTitle_(t('statistics'))
-        self.statisticsBtn.setBezelStyle_(NSBezelStyleRounded)
-        self.statisticsBtn.setButtonType_(1)  # NSMomentaryLightButton
-        self.statisticsBtn.setTarget_(self)
-        self.statisticsBtn.setAction_(objc.selector(self.openStatistics_, signature=b"v@:"))
-        content.addSubview_(self.statisticsBtn)
         
         # Поле общего времени
         self.weekTotalField = NSTextField.alloc().initWithFrame_(NSMakeRect(270, filterY + 0, 300, 20))
@@ -1101,12 +1093,17 @@ class TimeTrackerWindowController(NSObject):
             self.timer_running = True
             self.startStopBtn.setTitle_("■")
             self._updateStartStopAppearance()
+            
+            # Запускаем таймер для часовых напоминаний (каждый час)
+            self._startHourlyReminder()
+            
             try:
                 NSApp.delegate().updateStatusItem()
             except Exception:
                 pass
         else:
             # стоп
+            NSLog("=== НАЧАЛО ОСТАНОВКИ ТАЙМЕРА ===")
             # Сохраняем информацию о задаче перед остановкой для уведомления
             try:
                 idx = self.projectPopup.indexOfSelectedItem()
@@ -1120,30 +1117,67 @@ class TimeTrackerWindowController(NSObject):
                 if self.start_time:
                     elapsed_seconds = int((datetime.now() - self.start_time).total_seconds())
                     elapsed_time = self.formatDuration(elapsed_seconds)
+                NSLog(f"Информация о задаче собрана: {project_name}")
             except Exception as e:
                 NSLog(f"Error preparing stop notification: {e}")
+                import traceback
+                traceback.print_exc()
                 project_name = "Без названия"
                 task_description = ""
                 elapsed_time = ""
             
-            if self.current_session_id:
-                self.db.stop_session(self.current_session_id)
+            # Останавливаем таймер напоминаний ПЕРВЫМ делом
+            try:
+                NSLog("Останавливаем таймер напоминаний...")
+                self._stopHourlyReminder()
+                NSLog("Таймер напоминаний остановлен")
+            except Exception as e:
+                NSLog(f"Ошибка остановки таймера напоминаний: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            try:
+                NSLog(f"Останавливаем сессию {self.current_session_id}...")
+                if self.current_session_id:
+                    self.db.stop_session(self.current_session_id)
+                NSLog("Сессия остановлена")
+            except Exception as e:
+                NSLog(f"Ошибка остановки сессии: {e}")
+                import traceback
+                traceback.print_exc()
+            
             self.timer_running = False
             self.start_time = None
             self.startStopBtn.setTitle_("▶")
-            self._updateStartStopAppearance()
+            
+            try:
+                self._updateStartStopAppearance()
+            except Exception as e:
+                NSLog(f"Ошибка обновления внешнего вида кнопки: {e}")
+            
             self.descriptionField.setStringValue_("")
-            self.reloadSessions()
+            
+            try:
+                NSLog("Перезагружаем сессии...")
+                self.reloadSessions()
+                NSLog("Сессии перезагружены")
+            except Exception as e:
+                NSLog(f"Ошибка перезагрузки сессий: {e}")
+                import traceback
+                traceback.print_exc()
+            
             try:
                 NSApp.delegate().updateStatusItem()
-            except Exception:
-                pass
+            except Exception as e:
+                NSLog(f"Ошибка обновления статус-бара: {e}")
             
             # Отправляем уведомление об остановке
             try:
                 NSApp.delegate()._sendStopNotification(project_name, task_description, elapsed_time)
             except Exception as e:
                 NSLog(f"Error sending stop notification: {e}")
+            
+            NSLog("=== ОСТАНОВКА ТАЙМЕРА ЗАВЕРШЕНА ===")
 
     @objc.python_method
     def _updateStartStopAppearance(self):
@@ -1182,9 +1216,136 @@ class TimeTrackerWindowController(NSObject):
             self._updateStartStopAppearance()
             
             NSLog(f"Таймер восстановлен, прошло времени: {(datetime.now() - self.start_time).total_seconds():.0f} секунд")
+            
+            # Запускаем таймер напоминаний при восстановлении сессии
+            self._startHourlyReminder()
+            
             try:
                 NSApp.delegate().updateStatusItem()
             except Exception:
+                pass
+    
+    @objc.python_method
+    def _startHourlyReminder(self):
+        """Запускает таймер для напоминаний каждый час"""
+        # Останавливаем предыдущий таймер, если он был
+        self._stopHourlyReminder()
+        
+        # Получаем интервал из настроек (в минутах), по умолчанию 60 минут
+        defaults = NSUserDefaults.standardUserDefaults()
+        interval_minutes = defaults.integerForKey_("reminderInterval")
+        if interval_minutes <= 0:
+            interval_minutes = 60  # По умолчанию 60 минут
+        
+        interval_seconds = interval_minutes * 60.0
+        
+        # Запускаем новый таймер
+        NSLog(f"=== ЗАПУСК ТАЙМЕРА НАПОМИНАНИЙ (интервал: {interval_minutes} мин) ===")
+        self.hourly_reminder_ref = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            interval_seconds,
+            self,
+            objc.selector(self.showHourlyReminder_, signature=b"v@:@"),
+            None,
+            True  # Повторять
+        )
+        NSLog(f"Таймер создан: {self.hourly_reminder_ref}, валиден: {self.hourly_reminder_ref.isValid() if self.hourly_reminder_ref else 'None'}")
+    
+    @objc.python_method
+    def _stopHourlyReminder(self):
+        """Останавливает таймер напоминаний"""
+        if self.hourly_reminder_ref is not None:
+            NSLog("Остановка таймера напоминаний")
+            self.hourly_reminder_ref.invalidate()
+            self.hourly_reminder_ref = None
+    
+    def showHourlyReminder_(self, timer):
+        """Показывает напоминание о текущей активности"""
+        NSLog("=== ВЫЗВАН showHourlyReminder_ ===")
+        NSLog(f"Timer running: {self.timer_running}")
+        
+        if not self.timer_running:
+            # Если таймер уже остановлен, не показываем напоминание
+            NSLog("Таймер не запущен, пропускаем напоминание")
+            return
+        
+        NSLog("Показываем напоминание пользователю")
+        
+        # Получаем информацию о текущей задаче
+        try:
+            idx = self.projectPopup.indexOfSelectedItem()
+            project_name = "Без названия"
+            if idx > 0 and idx-1 < len(self.projects_cache):
+                project_name = self.projects_cache[idx-1]['name']
+            task_description = self.descriptionField.stringValue().strip()
+        except Exception as e:
+            NSLog(f"Error getting task info for reminder: {e}")
+            project_name = "Без названия"
+            task_description = ""
+        
+        # Формируем текст сообщения
+        message = f"Проект: {project_name}"
+        if task_description:
+            message += f"\nЗадача: {task_description}"
+        
+        # Создаем alert
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_(t('still_working_question'))
+        alert.setInformativeText_(message)
+        alert.addButtonWithTitle_(t('yes'))
+        alert.addButtonWithTitle_(t('no'))
+        alert.setAlertStyle_(1)  # NSInformationalAlertStyle
+        
+        # Показываем alert и обрабатываем ответ
+        NSLog("Показываем alert...")
+        response = alert.runModal()
+        NSLog(f"Получен ответ: {response}")
+        
+        # NSAlertFirstButtonReturn = 1000 (Да)
+        # NSAlertSecondButtonReturn = 1001 (Нет)
+        if response == 1001:  # Нажата кнопка "Нет"
+            NSLog("!!! ПОЛЬЗОВАТЕЛЬ НАЖАЛ 'НЕТ' - НАЧИНАЕМ ОСТАНОВКУ !!!")
+            NSLog(f"Текущее состояние timer_running: {self.timer_running}")
+            NSLog(f"Текущая сессия ID: {self.current_session_id}")
+            
+            # Попробуем остановить таймер напрямую из этого метода
+            # но с защитой от ошибок
+            try:
+                NSLog("Пытаемся остановить таймер напрямую...")
+                if self.timer_running:
+                    # Останавливаем таймер напоминаний сразу
+                    self._stopHourlyReminder()
+                    # Останавливаем основной таймер
+                    self.toggleTimer_(None)
+                    NSLog("Таймер успешно остановлен!")
+                else:
+                    NSLog("Таймер уже был остановлен")
+            except Exception as e:
+                NSLog(f"ОШИБКА при остановке таймера: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            NSLog("Пользователь ответил 'Да', продолжаем работу")
+    
+    def _stopTimerFromReminder_(self, sender):
+        """Безопасная остановка таймера из напоминания"""
+        NSLog("=== _stopTimerFromReminder_ ВЫЗВАН ===")
+        try:
+            if not self.timer_running:
+                NSLog("Таймер уже остановлен, выходим")
+                return
+            
+            NSLog("Выполняем остановку таймера из напоминания...")
+            self.toggleTimer_(None)
+            NSLog("Таймер успешно остановлен из напоминания")
+        except Exception as e:
+            NSLog(f"КРИТИЧЕСКАЯ ОШИБКА при остановке таймера из напоминания: {e}")
+            import traceback
+            traceback.print_exc()
+            # Пытаемся принудительно остановить
+            try:
+                self.timer_running = False
+                self._stopHourlyReminder()
+            except:
                 pass
 
     def continueSelected_(self, _):
@@ -1319,7 +1480,7 @@ class ProjectSettingsWindowController(NSObject):
             2,
             False
         )
-        self.window.setTitle_("Настройки")
+        self.window.setTitle_(t('settings'))
         self.window.setReleasedWhenClosed_(False)
         
         content = self.window.contentView()
@@ -1329,7 +1490,7 @@ class ProjectSettingsWindowController(NSObject):
         
         # Вкладка 1: Данные (Проекты)
         dataTab = NSTabViewItem.alloc().initWithIdentifier_("data")
-        dataTab.setLabel_("Данные")
+        dataTab.setLabel_(t('data'))
         dataView = NSView.alloc().initWithFrame_(tabView.contentRect())
         
         # Таблица проектов
@@ -1399,14 +1560,14 @@ class ProjectSettingsWindowController(NSObject):
         dataTab.setView_(dataView)
         tabView.addTabViewItem_(dataTab)
         
-        # Вкладка 2: Утилиты
+        # Вкладка 2: Системные
         utilsTab = NSTabViewItem.alloc().initWithIdentifier_("utils")
-        utilsTab.setLabel_("Утилиты")
+        utilsTab.setLabel_(t('system_settings'))
         utilsView = NSView.alloc().initWithFrame_(tabView.contentRect())
         
         # Кнопка Бекап базы данных
         backupBtn = NSButton.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 60, 180, 32))
-        backupBtn.setTitle_("Создать бекап БД")
+        backupBtn.setTitle_(t('backup_db'))
         backupBtn.setBezelStyle_(NSBezelStyleRounded)
         backupBtn.setTarget_(self)
         backupBtn.setAction_(objc.selector(self.createBackup_, signature=b"v@:@"))
@@ -1414,7 +1575,7 @@ class ProjectSettingsWindowController(NSObject):
         
         # Описание для бекапа
         backupLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 90, width-60, 20))
-        backupLabel.setStringValue_("Сохранить копию базы данных")
+        backupLabel.setStringValue_(t('backup_description'))
         backupLabel.setBezeled_(False)
         backupLabel.setDrawsBackground_(False)
         backupLabel.setEditable_(False)
@@ -1423,7 +1584,7 @@ class ProjectSettingsWindowController(NSObject):
         
         # Кнопка Восстановление из бекапа
         restoreBtn = NSButton.alloc().initWithFrame_(NSMakeRect(220, tabHeight - 60, 200, 32))
-        restoreBtn.setTitle_("Восстановить из бекапа")
+        restoreBtn.setTitle_(t('restore_from_backup'))
         restoreBtn.setBezelStyle_(NSBezelStyleRounded)
         restoreBtn.setTarget_(self)
         restoreBtn.setAction_(objc.selector(self.restoreBackup_, signature=b"v@:@"))
@@ -1431,12 +1592,109 @@ class ProjectSettingsWindowController(NSObject):
         
         # Описание для восстановления
         restoreLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(220, tabHeight - 90, width-240, 20))
-        restoreLabel.setStringValue_("Загрузить базу данных из файла бекапа")
+        restoreLabel.setStringValue_(t('restore_description'))
         restoreLabel.setBezeled_(False)
         restoreLabel.setDrawsBackground_(False)
         restoreLabel.setEditable_(False)
         restoreLabel.setTextColor_(NSColor.secondaryLabelColor())
         utilsView.addSubview_(restoreLabel)
+        
+        # Разделитель
+        separator = NSBox.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 120, width-60, 1))
+        separator.setBoxType_(2)  # Separator
+        utilsView.addSubview_(separator)
+        
+        # Настройка времени напоминания
+        reminderLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 160, 180, 20))
+        reminderLabel.setStringValue_(t('reminder_interval'))
+        reminderLabel.setBezeled_(False)
+        reminderLabel.setDrawsBackground_(False)
+        reminderLabel.setEditable_(False)
+        utilsView.addSubview_(reminderLabel)
+        
+        # Поле для ввода времени напоминания
+        self.reminderIntervalField = NSTextField.alloc().initWithFrame_(NSMakeRect(210, tabHeight - 165, 80, 28))
+        self.reminderIntervalField.setPlaceholderString_("60")
+        # Загружаем сохраненное значение или используем 60 минут по умолчанию
+        defaults = NSUserDefaults.standardUserDefaults()
+        savedInterval = defaults.integerForKey_("reminderInterval")
+        if savedInterval == 0:
+            savedInterval = 60  # По умолчанию 60 минут (1 час)
+        self.reminderIntervalField.setStringValue_(str(savedInterval))
+        utilsView.addSubview_(self.reminderIntervalField)
+        
+        # Метка "минут" рядом с полем
+        minutesLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(295, tabHeight - 160, 60, 20))
+        minutesLabel.setStringValue_(t('minutes'))
+        minutesLabel.setBezeled_(False)
+        minutesLabel.setDrawsBackground_(False)
+        minutesLabel.setEditable_(False)
+        utilsView.addSubview_(minutesLabel)
+        
+        # Описание для напоминания
+        reminderDescLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 190, width-60, 20))
+        reminderDescLabel.setStringValue_(t('reminder_description'))
+        reminderDescLabel.setBezeled_(False)
+        reminderDescLabel.setDrawsBackground_(False)
+        reminderDescLabel.setEditable_(False)
+        reminderDescLabel.setTextColor_(NSColor.secondaryLabelColor())
+        utilsView.addSubview_(reminderDescLabel)
+        
+        # Разделитель перед настройками языка
+        separator2 = NSBox.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 220, width-60, 1))
+        separator2.setBoxType_(2)  # Separator
+        utilsView.addSubview_(separator2)
+        
+        # Настройка языка интерфейса
+        languageLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 260, 180, 20))
+        languageLabel.setStringValue_(t('interface_language'))
+        languageLabel.setBezeled_(False)
+        languageLabel.setDrawsBackground_(False)
+        languageLabel.setEditable_(False)
+        utilsView.addSubview_(languageLabel)
+        
+        # Popup для выбора языка
+        self.languagePopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(210, tabHeight - 265, 200, 28), False)
+        self.languagePopup.addItemWithTitle_(t('language_english'))
+        self.languagePopup.addItemWithTitle_(t('language_russian'))
+        self.languagePopup.addItemWithTitle_(t('language_ukrainian'))
+        self.languagePopup.addItemWithTitle_(t('language_hungarian'))
+        
+        # Устанавливаем текущий выбранный язык
+        from localization import get_localization
+        current_lang = get_localization().get_current_language()
+        if current_lang == 'en':
+            self.languagePopup.selectItemAtIndex_(0)
+        elif current_lang == 'ru':
+            self.languagePopup.selectItemAtIndex_(1)
+        elif current_lang == 'uk':
+            self.languagePopup.selectItemAtIndex_(2)
+        elif current_lang == 'hu':
+            self.languagePopup.selectItemAtIndex_(3)
+        
+        utilsView.addSubview_(self.languagePopup)
+        
+        # Описание для выбора языка
+        languageDescLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 290, width-60, 20))
+        languageDescLabel.setStringValue_(t('language_description'))
+        languageDescLabel.setBezeled_(False)
+        languageDescLabel.setDrawsBackground_(False)
+        languageDescLabel.setEditable_(False)
+        languageDescLabel.setTextColor_(NSColor.secondaryLabelColor())
+        utilsView.addSubview_(languageDescLabel)
+        
+        # Разделитель перед общей кнопкой сохранения
+        separator3 = NSBox.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 320, width-60, 1))
+        separator3.setBoxType_(2)  # Separator
+        utilsView.addSubview_(separator3)
+        
+        # Общая кнопка сохранения всех настроек
+        saveAllBtn = NSButton.alloc().initWithFrame_(NSMakeRect((width - 180) / 2, tabHeight - 360, 180, 32))
+        saveAllBtn.setTitle_(t('save'))
+        saveAllBtn.setBezelStyle_(NSBezelStyleRounded)
+        saveAllBtn.setTarget_(self)
+        saveAllBtn.setAction_(objc.selector(self.saveAllSettings_, signature=b"v@:@"))
+        utilsView.addSubview_(saveAllBtn)
         
         utilsTab.setView_(utilsView)
         tabView.addTabViewItem_(utilsTab)
@@ -1511,7 +1769,7 @@ class ProjectSettingsWindowController(NSObject):
             
             # Создаем диалог выбора места сохранения
             panel = NSSavePanel.savePanel()
-            panel.setTitle_("Сохранить бекап базы данных")
+            panel.setTitle_(t('save_backup_title'))
             
             # Имя файла по умолчанию с датой и временем
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -1527,8 +1785,8 @@ class ProjectSettingsWindowController(NSObject):
                 
                 # Показываем сообщение об успехе
                 alert = NSAlert.alloc().init()
-                alert.setMessageText_("Бекап создан успешно")
-                alert.setInformativeText_(f"База данных сохранена в:\n{backup_path}")
+                alert.setMessageText_(t('backup_created'))
+                alert.setInformativeText_(t('database_saved_to') + f"\n{backup_path}")
                 alert.setAlertStyle_(NSAlertStyleInformational)
                 alert.addButtonWithTitle_("OK")
                 alert.runModal()
@@ -1541,7 +1799,7 @@ class ProjectSettingsWindowController(NSObject):
             traceback.print_exc()
             
             alert = NSAlert.alloc().init()
-            alert.setMessageText_("Ошибка создания бекапа")
+            alert.setMessageText_(t('backup_error'))
             alert.setInformativeText_(str(e))
             alert.setAlertStyle_(NSAlertStyleWarning)
             alert.addButtonWithTitle_("OK")
@@ -1567,11 +1825,11 @@ class ProjectSettingsWindowController(NSObject):
             
             # Предупреждение о замене текущей базы
             alert = NSAlert.alloc().init()
-            alert.setMessageText_("Восстановление из бекапа")
-            alert.setInformativeText_("ВНИМАНИЕ: Текущая база данных будет заменена на выбранный бекап. Все несохраненные данные будут потеряны. Рекомендуется сначала создать бекап текущей базы.\n\nПродолжить?")
+            alert.setMessageText_(t('restore_title'))
+            alert.setInformativeText_(t('restore_warning'))
             alert.setAlertStyle_(NSAlertStyleWarning)
-            alert.addButtonWithTitle_("Продолжить")
-            alert.addButtonWithTitle_("Отмена")
+            alert.addButtonWithTitle_(t('restore_continue'))
+            alert.addButtonWithTitle_(t('cancel'))
             
             # Первая кнопка возвращает 1000, вторая - 1001
             response = alert.runModal()
@@ -1581,7 +1839,7 @@ class ProjectSettingsWindowController(NSObject):
             
             # Создаем диалог выбора файла
             panel = NSOpenPanel.openPanel()
-            panel.setTitle_("Выберите файл бекапа")
+            panel.setTitle_(t('select_backup_file'))
             panel.setAllowedFileTypes_(["db"])
             panel.setCanChooseFiles_(True)
             panel.setCanChooseDirectories_(False)
@@ -1620,8 +1878,8 @@ class ProjectSettingsWindowController(NSObject):
                     
                     # Показываем сообщение об успехе
                     alert = NSAlert.alloc().init()
-                    alert.setMessageText_("Восстановление завершено")
-                    alert.setInformativeText_("База данных успешно восстановлена из бекапа. Перезапустите приложение для применения изменений.")
+                    alert.setMessageText_(t('database_restored'))
+                    alert.setInformativeText_(t('database_restore_success'))
                     alert.setAlertStyle_(NSAlertStyleInformational)
                     alert.addButtonWithTitle_("OK")
                     alert.runModal()
@@ -1641,7 +1899,204 @@ class ProjectSettingsWindowController(NSObject):
             traceback.print_exc()
             
             alert = NSAlert.alloc().init()
-            alert.setMessageText_("Ошибка восстановления")
+            alert.setMessageText_(t('restore_error'))
+            alert.setInformativeText_(str(e))
+            alert.setAlertStyle_(NSAlertStyleWarning)
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+    
+    def saveAllSettings_(self, sender):
+        """Сохранение всех настроек и перезапуск приложения"""
+        try:
+            # 1. Валидация интервала напоминаний
+            interval_str = self.reminderIntervalField.stringValue().strip()
+            
+            try:
+                interval = int(interval_str)
+            except ValueError:
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_(t('error'))
+                alert.setInformativeText_("Пожалуйста, введите корректное число для интервала напоминаний")
+                alert.setAlertStyle_(NSAlertStyleWarning)
+                alert.addButtonWithTitle_("OK")
+                alert.runModal()
+                return
+            
+            # Проверяем диапазон (1-1440 минут = 24 часа)
+            if interval < 1 or interval > 1440:
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_(t('error'))
+                alert.setInformativeText_("Интервал должен быть от 1 до 1440 минут")
+                alert.setAlertStyle_(NSAlertStyleWarning)
+                alert.addButtonWithTitle_("OK")
+                alert.runModal()
+                return
+            
+            # 2. Получаем выбранный язык
+            selected_index = self.languagePopup.indexOfSelectedItem()
+            lang_codes = ['en', 'ru', 'uk', 'hu']
+            lang_code = lang_codes[selected_index]
+            
+            # 3. Сохраняем все настройки в NSUserDefaults
+            defaults = NSUserDefaults.standardUserDefaults()
+            defaults.setInteger_forKey_(interval, "reminderInterval")
+            defaults.setObject_forKey_(lang_code, "interfaceLanguage")
+            defaults.synchronize()
+            
+            NSLog(f"Сохранены настройки: интервал={interval} мин, язык={lang_code}")
+            
+            # 4. Показываем сообщение о сохранении и перезапуске
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('setting_saved'))
+            alert.setInformativeText_("Настройки сохранены. Приложение будет перезапущено.")
+            alert.setAlertStyle_(NSAlertStyleInformational)
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            
+            # 5. Перезапускаем приложение
+            self.restartApplication()
+            
+        except Exception as e:
+            NSLog(f"Ошибка сохранения настроек: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('error'))
+            alert.setInformativeText_(str(e))
+            alert.setAlertStyle_(NSAlertStyleWarning)
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+    
+    def restartApplication(self):
+        """Перезапуск приложения"""
+        try:
+            import subprocess
+            import sys
+            import os
+            
+            # Получаем путь к исполняемому файлу
+            executable = sys.executable
+            
+            NSLog(f"Перезапуск приложения: {executable}")
+            
+            # Закрываем окно настроек
+            if hasattr(self, 'window') and self.window:
+                self.window.close()
+            
+            # Запускаем новый процесс
+            # Передаем текущее окружение, чтобы сохранить переменные типа MTIMER_DEV
+            env = os.environ.copy()
+            subprocess.Popen([executable] + sys.argv, env=env)
+            
+            # Завершаем текущий процесс
+            NSApplication.sharedApplication().terminate_(None)
+            
+        except Exception as e:
+            NSLog(f"Ошибка перезапуска приложения: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def saveLanguage_(self, sender):
+        """Сохраняет выбранный язык интерфейса"""
+        try:
+            # Получаем индекс выбранного языка
+            idx = self.languagePopup.indexOfSelectedItem()
+            
+            # Определяем код языка
+            lang_code = None
+            lang_name = None
+            if idx == 0:
+                lang_code = 'en'
+                lang_name = t('language_english')
+            elif idx == 1:
+                lang_code = 'ru'
+                lang_name = t('language_russian')
+            elif idx == 2:
+                lang_code = 'uk'
+                lang_name = t('language_ukrainian')
+            
+            if not lang_code:
+                return
+            
+            # Сохраняем в NSUserDefaults
+            from Foundation import NSUserDefaults
+            defaults = NSUserDefaults.standardUserDefaults()
+            defaults.setObject_forKey_(lang_code, "interfaceLanguage")
+            defaults.synchronize()
+            
+            NSLog(f"Сохранен язык интерфейса: {lang_code}")
+            
+            # Показываем сообщение об успехе
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('setting_saved'))
+            alert.setInformativeText_(t('language_saved').format(lang_name))
+            alert.setAlertStyle_(NSAlertStyleInformational)
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            
+        except Exception as e:
+            NSLog(f"Ошибка сохранения языка: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('error'))
+            alert.setInformativeText_(str(e))
+            alert.setAlertStyle_(NSAlertStyleWarning)
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+    
+    def saveReminderInterval_(self, sender):
+        """Сохраняет интервал напоминаний в настройки"""
+        try:
+            # Получаем значение из текстового поля
+            interval_str = self.reminderIntervalField.stringValue().strip()
+            
+            # Проверяем, что введено число
+            try:
+                interval = int(interval_str)
+            except ValueError:
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_(t('error'))
+                alert.setInformativeText_(t('enter_integer'))
+                alert.setAlertStyle_(NSAlertStyleWarning)
+                alert.addButtonWithTitle_("OK")
+                alert.runModal()
+                return
+            
+            # Проверяем диапазон (от 1 до 1440 минут = 24 часа)
+            if interval < 1 or interval > 1440:
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_(t('error'))
+                alert.setInformativeText_(t('interval_range'))
+                alert.setAlertStyle_(NSAlertStyleWarning)
+                alert.addButtonWithTitle_("OK")
+                alert.runModal()
+                return
+            
+            # Сохраняем в NSUserDefaults
+            defaults = NSUserDefaults.standardUserDefaults()
+            defaults.setInteger_forKey_(interval, "reminderInterval")
+            defaults.synchronize()
+            
+            NSLog(f"Сохранен интервал напоминаний: {interval} минут")
+            
+            # Показываем сообщение об успехе
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('setting_saved'))
+            alert.setInformativeText_(t('interval_saved').format(interval))
+            alert.setAlertStyle_(NSAlertStyleInformational)
+            alert.addButtonWithTitle_("OK")
+            alert.runModal()
+            
+        except Exception as e:
+            NSLog(f"Ошибка сохранения интервала напоминаний: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('error'))
             alert.setInformativeText_(str(e))
             alert.setAlertStyle_(NSAlertStyleWarning)
             alert.addButtonWithTitle_("OK")
@@ -2317,7 +2772,7 @@ class AllTasksWindowController(NSObject):
             2,
             False
         )
-        self.window.setTitle_("Статистика - Всі задачі")
+        self.window.setTitle_(t('all_tasks'))
         self.window.setReleasedWhenClosed_(False)
         
         # Встановлюємо мінімальний і максимальний розмір вікна
@@ -2340,7 +2795,7 @@ class AllTasksWindowController(NSObject):
         
         # Label "Фільтр:"
         filterLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, filterY, 60, 20))
-        filterLabel.setStringValue_("Період:")
+        filterLabel.setStringValue_(t('period'))
         filterLabel.setBezeled_(False)
         filterLabel.setDrawsBackground_(False)
         filterLabel.setEditable_(False)
@@ -2348,17 +2803,17 @@ class AllTasksWindowController(NSObject):
         
         # Popup для вибору періоду
         self.filterPopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(90, filterY, 150, 28), False)
-        self.filterPopup.addItemWithTitle_("Всі задачі")
-        self.filterPopup.addItemWithTitle_("Сьогодні")
-        self.filterPopup.addItemWithTitle_("Тиждень")
-        self.filterPopup.addItemWithTitle_("Місяць")
+        self.filterPopup.addItemWithTitle_(t('all'))
+        self.filterPopup.addItemWithTitle_(t('today'))
+        self.filterPopup.addItemWithTitle_(t('week'))
+        self.filterPopup.addItemWithTitle_(t('month'))
         self.filterPopup.setTarget_(self)
         self.filterPopup.setAction_(objc.selector(self.filterChanged_, signature=b"v@:"))
         content.addSubview_(self.filterPopup)
         
         # Label "Проект:"
         projectLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(270, filterY, 60, 20))
-        projectLabel.setStringValue_("Проект:")
+        projectLabel.setStringValue_(t('project') + ':')
         projectLabel.setBezeled_(False)
         projectLabel.setDrawsBackground_(False)
         projectLabel.setEditable_(False)
@@ -2433,7 +2888,7 @@ class AllTasksWindowController(NSObject):
         """Завантажити список проектів"""
         self.projects_cache = self.db.get_all_projects()
         self.projectPopup.removeAllItems()
-        self.projectPopup.addItemWithTitle_("Всі проекти")
+        self.projectPopup.addItemWithTitle_(t('all_projects'))
         for p in self.projects_cache:
             self.projectPopup.addItemWithTitle_(p['name'])
     
@@ -2750,7 +3205,7 @@ class AppDelegate(NSObject):
             
             # Пункт меню "Статистика (Все задачи)"
             allTasksItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                "Статистика (Все задачи)", objc.selector(self.openAllTasks_, signature=b"v@:@"), "a"
+                t('all_tasks'), objc.selector(self.openAllTasks_, signature=b"v@:@"), "a"
             )
             allTasksItem.setKeyEquivalentModifierMask_(COMMAND_MASK | SHIFT_MASK)
             allTasksItem.setTarget_(self)
