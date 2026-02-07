@@ -116,6 +116,13 @@ class Database:
         except sqlite3.OperationalError:
             pass
         
+        # Добавляем колонку paid (оплачено) если её нет (миграция)
+        try:
+            cursor.execute('ALTER TABLE time_sessions ADD COLUMN paid INTEGER DEFAULT 0')
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+        
         conn.commit()
     
     def create_project(self, name, color='#0000FF', hourly_rate=0):
@@ -209,6 +216,31 @@ class Database:
         conn.commit()
         return cursor.rowcount > 0
     
+    def mark_session_as_paid(self, session_id):
+        """Отмечает сессию как оплаченную"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE time_sessions SET paid = 1 WHERE id = ?', (session_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    
+    def mark_session_as_unpaid(self, session_id):
+        """Отмечает сессию как неоплаченную"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE time_sessions SET paid = 0 WHERE id = ?', (session_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    
+    def mark_sessions_as_paid(self, session_ids):
+        """Отмечает несколько сессий как оплаченные"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        placeholders = ','.join('?' * len(session_ids))
+        cursor.execute(f'UPDATE time_sessions SET paid = 1 WHERE id IN ({placeholders})', session_ids)
+        conn.commit()
+        return cursor.rowcount
+    
     def get_active_session(self):
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -246,7 +278,7 @@ class Database:
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
             LEFT JOIN work_types w ON s.work_type_id = w.id
-            WHERE date(s.start_time) BETWEEN date(?) AND date(?)
+            WHERE date(s.start_time) BETWEEN date(?) AND date(?) AND (s.paid IS NULL OR s.paid = 0)
             ORDER BY s.start_time DESC
         ''', (start_date, end_date))
         return cursor.fetchall()
@@ -260,7 +292,7 @@ class Database:
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
             LEFT JOIN work_types w ON s.work_type_id = w.id
-            WHERE date(s.start_time) = date(?)
+            WHERE date(s.start_time) = date(?) AND (s.paid IS NULL OR s.paid = 0)
             ORDER BY s.start_time DESC
         ''', (today,))
         return cursor.fetchall()
@@ -274,7 +306,7 @@ class Database:
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
             LEFT JOIN work_types w ON s.work_type_id = w.id
-            WHERE date(s.start_time) >= date('now', '-6 days')
+            WHERE date(s.start_time) >= date('now', '-6 days') AND (s.paid IS NULL OR s.paid = 0)
             ORDER BY s.start_time DESC
         ''')
         return cursor.fetchall()
@@ -288,7 +320,7 @@ class Database:
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
             LEFT JOIN work_types w ON s.work_type_id = w.id
-            WHERE date(s.start_time) >= date('now', '-29 days')
+            WHERE date(s.start_time) >= date('now', '-29 days') AND (s.paid IS NULL OR s.paid = 0)
             ORDER BY s.start_time DESC
         ''')
         return cursor.fetchall()
@@ -299,7 +331,7 @@ class Database:
         cursor.execute('''
             SELECT SUM(duration) as total
             FROM time_sessions
-            WHERE date(start_time) >= date('now', '-6 days')
+            WHERE date(start_time) >= date('now', '-6 days') AND (paid IS NULL OR paid = 0)
         ''')
         row = cursor.fetchone()
         return row['total'] if row['total'] else 0
@@ -311,7 +343,7 @@ class Database:
         cursor.execute('''
             SELECT SUM(duration) as total
             FROM time_sessions
-            WHERE date(start_time) >= date('now', '-29 days')
+            WHERE date(start_time) >= date('now', '-29 days') AND (paid IS NULL OR paid = 0)
         ''')
         row = cursor.fetchone()
         return row['total'] if row['total'] else 0
@@ -333,7 +365,7 @@ class Database:
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
             LEFT JOIN work_types w ON s.work_type_id = w.id
-            WHERE s.project_id = ? AND {date_filter}
+            WHERE s.project_id = ? AND {date_filter} AND (s.paid IS NULL OR s.paid = 0)
             ORDER BY s.start_time DESC
         ''', (project_id,))
         return cursor.fetchall()
@@ -353,7 +385,7 @@ class Database:
         cursor.execute(f'''
             SELECT SUM(duration) as total
             FROM time_sessions
-            WHERE project_id = ? AND {date_filter}
+            WHERE project_id = ? AND {date_filter} AND (paid IS NULL OR paid = 0)
         ''', (project_id,))
         row = cursor.fetchone()
         return row['total'] if row['total'] else 0
@@ -376,17 +408,36 @@ class Database:
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
             LEFT JOIN work_types w ON s.work_type_id = w.id
+            WHERE s.start_time >= ? AND s.start_time <= ? AND (s.paid IS NULL OR s.paid = 0)
+            ORDER BY s.start_time DESC
+        ''', (start_date, end_date))
+        return cursor.fetchall()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 
+                s.*,
+                p.name as project_name,
+                p.color as project_color,
+                p.hourly_rate,
+                w.name as work_type_name,
+                CASE 
+                    WHEN p.hourly_rate > 0 THEN (s.duration / 3600.0) * p.hourly_rate
+                    ELSE 0
+                END as cost
+            FROM time_sessions s
+            LEFT JOIN projects p ON s.project_id = p.id
+            LEFT JOIN work_types w ON s.work_type_id = w.id
             WHERE s.start_time >= ? AND s.start_time <= ?
             ORDER BY s.start_time ASC
         ''', (start_date, end_date))
         return cursor.fetchall()
     
     def get_all_sessions(self):
-        """Отримати всі сесії (без фільтра по даті)"""
+        """Отримати всі сесії (без фільтра по даті), включая оплаченные для окна статистики"""
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT s.*, p.name as project_name, p.color as project_color
+            SELECT s.*, p.name as project_name, p.color as project_color, p.hourly_rate
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
             WHERE s.end_time IS NOT NULL
@@ -395,11 +446,11 @@ class Database:
         return cursor.fetchall()
     
     def get_all_sessions_by_project(self, project_id):
-        """Отримати всі сесії для конкретного проекту (без фільтра по даті)"""
+        """Отримати всі сесії для конкретного проекту (без фільтра по даті), включая оплаченные"""
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT s.*, p.name as project_name, p.color as project_color
+            SELECT s.*, p.name as project_name, p.color as project_color, p.hourly_rate
             FROM time_sessions s
             LEFT JOIN projects p ON s.project_id = p.id
             WHERE s.project_id = ? AND s.end_time IS NOT NULL
@@ -415,7 +466,7 @@ class Database:
         if period == 'today':
             today = datetime.now().date()
             cursor.execute('''
-                SELECT s.*, p.name as project_name, p.color as project_color
+                SELECT s.*, p.name as project_name, p.color as project_color, p.hourly_rate
                 FROM time_sessions s
                 LEFT JOIN projects p ON s.project_id = p.id
                 WHERE DATE(s.start_time) = ? AND s.end_time IS NOT NULL
@@ -425,7 +476,7 @@ class Database:
             today = datetime.now().date()
             start_of_week = today - timedelta(days=today.weekday())
             cursor.execute('''
-                SELECT s.*, p.name as project_name, p.color as project_color
+                SELECT s.*, p.name as project_name, p.color as project_color, p.hourly_rate
                 FROM time_sessions s
                 LEFT JOIN projects p ON s.project_id = p.id
                 WHERE DATE(s.start_time) >= ? AND s.end_time IS NOT NULL
@@ -435,7 +486,7 @@ class Database:
             today = datetime.now().date()
             start_of_month = today.replace(day=1)
             cursor.execute('''
-                SELECT s.*, p.name as project_name, p.color as project_color
+                SELECT s.*, p.name as project_name, p.color as project_color, p.hourly_rate
                 FROM time_sessions s
                 LEFT JOIN projects p ON s.project_id = p.id
                 WHERE DATE(s.start_time) >= ? AND s.end_time IS NOT NULL

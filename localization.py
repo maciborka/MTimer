@@ -22,6 +22,10 @@ TRANSLATIONS = {
         'today': 'Today',
         'week': 'Week',
         'month': 'Month',
+        'custom_period': 'Custom Period',
+        'from_date': 'From:',
+        'to_date': 'To:',
+        'apply': 'Apply',
         
         # Проекты
         'all_projects': 'All Projects',
@@ -66,6 +70,11 @@ TRANSLATIONS = {
         'delete_confirm_title': 'Confirm Deletion',
         'delete_confirm_message': 'Are you sure you want to delete this session? This action cannot be undone.',
         'delete': 'Delete',
+        
+        # Отметка как оплаченное
+        'mark_as_paid_title': 'Mark as Paid',
+        'mark_as_paid_message': 'Mark this session as paid? It will be hidden from the main view.',
+        'paid': 'Paid',
         
         # Настройки проектов
         'settings': 'Settings',
@@ -156,6 +165,10 @@ TRANSLATIONS = {
         'today': 'Сегодня',
         'week': 'Неделя',
         'month': 'Месяц',
+        'custom_period': 'Свой период',
+        'from_date': 'С:',
+        'to_date': 'По:',
+        'apply': 'Применить',
         
         # Проекты
         'all_projects': 'Все проекты',
@@ -200,6 +213,11 @@ TRANSLATIONS = {
         'delete_confirm_title': 'Подтверждение удаления',
         'delete_confirm_message': 'Вы уверены, что хотите удалить эту запись? Это действие нельзя отменить.',
         'delete': 'Удалить',
+        
+        # Отметка как оплаченное
+        'mark_as_paid_title': 'Отметить как оплаченное',
+        'mark_as_paid_message': 'Отметить эту задачу как оплаченную? Она будет скрыта из основного окна.',
+        'paid': 'Оплачено',
         
         # Настройки проектов
         'settings': 'Настройки',
@@ -290,12 +308,16 @@ TRANSLATIONS = {
         'today': 'Сьогодні',
         'week': 'Тиждень',
         'month': 'Місяць',
+        'custom_period': 'Свій період',
+        'from_date': 'З:',
+        'to_date': 'По:',
+        'apply': 'Застосувати',
         
         # Проекти
         'all_projects': 'Всі проекти',
         'new_project': 'Новий проект',
         'project_name': 'Назва проекту:',
-        'hourly_rate': 'Ставка ($/год):',
+        'hourly_rate': 'Ставка ($/година):',
         'create': 'Створити',
         'cancel': 'Скасувати',
         
@@ -335,6 +357,11 @@ TRANSLATIONS = {
         'delete_confirm_message': 'Ви впевнені, що хочете видалити цей запис? Цю дію неможливо скасувати.',
         'delete': 'Видалити',
         
+        # Відмітка як оплачене
+        'mark_as_paid_title': 'Позначити як оплачене',
+        'mark_as_paid_message': 'Позначити це завдання як оплачене? Воно буде приховане з основного вікна.',
+        'paid': 'Оплачено',
+        
         # Налаштування проектів
         'settings': 'Налаштування',
         'statistics': 'Статистика',
@@ -342,7 +369,7 @@ TRANSLATIONS = {
         'edit_project': 'Змінити проект',
         'save': 'Зберегти',
         'project': 'Проект',
-        'rate': 'Ставка ($/год)',
+        'rate': 'Ставка ($/година)',
         
         # Меню програми
         'about': 'Про програму MTimer',
@@ -424,6 +451,10 @@ TRANSLATIONS = {
         'today': 'Ma',
         'week': 'Hét',
         'month': 'Hónap',
+        'custom_period': 'Egyéni időszak',
+        'from_date': 'Ettől:',
+        'to_date': 'Eddig:',
+        'apply': 'Alkalmazás',
         
         # Projektek
         'all_projects': 'Minden projekt',
@@ -468,6 +499,11 @@ TRANSLATIONS = {
         'delete_confirm_title': 'Törlés megerősítése',
         'delete_confirm_message': 'Biztosan törölni szeretnéd ezt a munkamenetet? Ez a művelet nem vonható vissza.',
         'delete': 'Törlés',
+        
+        # Fizetve jelölés
+        'mark_as_paid_title': 'Fizetettként megjelölés',
+        'mark_as_paid_message': 'Megjelöljük ezt a feladatot fizetettként? El lesz rejtve a fő nézetből.',
+        'paid': 'Fizetve',
         
         # Projekt beállítások
         'settings': 'Beállítások',

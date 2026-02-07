@@ -10,7 +10,7 @@ from Cocoa import (
     NSAlert, NSAlertStyleWarning, NSAlertStyleInformational, NSView, NSColor, 
     NSMenu, NSMenuItem, NSImage, NSNotificationCenter, NSStatusBar, 
     NSVariableStatusItemLength, NSSavePanel, NSModalResponseOK, NSTabView,
-    NSTabViewItem, NSStackView, NSBox
+    NSTabViewItem, NSStackView, NSBox, NSDatePicker
 )
 from Foundation import NSLog, NSDateFormatter, NSDateComponentsFormatter, NSBundle, NSUserNotification, NSUserNotificationCenter, NSThread, NSString, NSUserDefaults
 import os
@@ -269,7 +269,17 @@ class TimeTrackerWindowController(NSObject):
         
         # Кнопки фильтра периода
         filterX = 20
-        self.todayFilterBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX, filterY, 80, 24))
+        
+        # Кнопка "Свой период" - ПЕРВАЯ
+        self.customFilterBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX, filterY, 110, 24))
+        self.customFilterBtn.setTitle_(t('custom_period'))
+        self.customFilterBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.customFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton
+        self.customFilterBtn.setTarget_(self)
+        self.customFilterBtn.setAction_(objc.selector(self.setFilterCustom_, signature=b"v@:"))
+        content.addSubview_(self.customFilterBtn)
+        
+        self.todayFilterBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX + 115, filterY, 80, 24))
         self.todayFilterBtn.setTitle_(t('today'))
         self.todayFilterBtn.setBezelStyle_(NSBezelStyleRounded)
         self.todayFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton - toggle button поведение
@@ -277,7 +287,7 @@ class TimeTrackerWindowController(NSObject):
         self.todayFilterBtn.setAction_(objc.selector(self.setFilterToday_, signature=b"v@:"))
         content.addSubview_(self.todayFilterBtn)
         
-        self.weekFilterBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX + 85, filterY, 80, 24))
+        self.weekFilterBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX + 200, filterY, 80, 24))
         self.weekFilterBtn.setTitle_(t('week'))
         self.weekFilterBtn.setBezelStyle_(NSBezelStyleRounded)
         self.weekFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton
@@ -285,13 +295,61 @@ class TimeTrackerWindowController(NSObject):
         self.weekFilterBtn.setAction_(objc.selector(self.setFilterWeek_, signature=b"v@:"))
         content.addSubview_(self.weekFilterBtn)
         
-        self.monthFilterBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX + 170, filterY, 80, 24))
+        self.monthFilterBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX + 285, filterY, 80, 24))
         self.monthFilterBtn.setTitle_(t('month'))
         self.monthFilterBtn.setBezelStyle_(NSBezelStyleRounded)
         self.monthFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton
         self.monthFilterBtn.setTarget_(self)
         self.monthFilterBtn.setAction_(objc.selector(self.setFilterMonth_, signature=b"v@:"))
         content.addSubview_(self.monthFilterBtn)
+        
+        # Поля выбора дат (по умолчанию скрыты) - размещаются НИЖЕ кнопки
+        customDateY = filterY - 35
+        
+        # Метка "С:"
+        self.fromDateLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(filterX, customDateY, 25, 20))
+        self.fromDateLabel.setStringValue_(t('from_date'))
+        self.fromDateLabel.setBezeled_(False)
+        self.fromDateLabel.setDrawsBackground_(False)
+        self.fromDateLabel.setEditable_(False)
+        self.fromDateLabel.setHidden_(True)
+        content.addSubview_(self.fromDateLabel)
+        
+        # NSDatePicker для выбора даты "от"
+        from datetime import datetime, timedelta
+        self.fromDatePicker = NSDatePicker.alloc().initWithFrame_(NSMakeRect(filterX + 30, customDateY - 2, 140, 24))
+        self.fromDatePicker.setDatePickerStyle_(0)  # NSDatePickerStyleTextFieldAndStepper
+        self.fromDatePicker.setDatePickerElements_(14)  # NSYearMonthDayDatePickerElementFlag
+        default_from_date = datetime.now() - timedelta(days=30)
+        self.fromDatePicker.setDateValue_(default_from_date)
+        self.fromDatePicker.setHidden_(True)
+        content.addSubview_(self.fromDatePicker)
+        
+        # Метка "По:"
+        self.toDateLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(filterX + 180, customDateY, 25, 20))
+        self.toDateLabel.setStringValue_(t('to_date'))
+        self.toDateLabel.setBezeled_(False)
+        self.toDateLabel.setDrawsBackground_(False)
+        self.toDateLabel.setEditable_(False)
+        self.toDateLabel.setHidden_(True)
+        content.addSubview_(self.toDateLabel)
+        
+        # NSDatePicker для выбора даты "до"
+        self.toDatePicker = NSDatePicker.alloc().initWithFrame_(NSMakeRect(filterX + 210, customDateY - 2, 140, 24))
+        self.toDatePicker.setDatePickerStyle_(0)  # NSDatePickerStyleTextFieldAndStepper
+        self.toDatePicker.setDatePickerElements_(14)  # NSYearMonthDayDatePickerElementFlag
+        self.toDatePicker.setDateValue_(datetime.now())
+        self.toDatePicker.setHidden_(True)
+        content.addSubview_(self.toDatePicker)
+        
+        # Кнопка "Применить"
+        self.applyCustomFilterBtn = NSButton.alloc().initWithFrame_(NSMakeRect(filterX + 360, customDateY - 2, 80, 24))
+        self.applyCustomFilterBtn.setTitle_(t('apply'))
+        self.applyCustomFilterBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.applyCustomFilterBtn.setTarget_(self)
+        self.applyCustomFilterBtn.setAction_(objc.selector(self.applyCustomFilter_, signature=b"v@:"))
+        self.applyCustomFilterBtn.setHidden_(True)
+        content.addSubview_(self.applyCustomFilterBtn)
         
         # Поле общего времени
         self.weekTotalField = NSTextField.alloc().initWithFrame_(NSMakeRect(270, filterY + 0, 300, 20))
@@ -561,17 +619,32 @@ class TimeTrackerWindowController(NSObject):
         # Загружаем сессии в зависимости от выбранного фильтра и проекта
         if self.selected_project_id is not None:
             # Фильтр по проекту
-            self.today_sessions = [dict(row) for row in self.db.get_sessions_by_project(self.selected_project_id, self.current_filter)]
-            period_total = self.db.get_project_total(self.selected_project_id, self.current_filter)
+            if self.current_filter == "custom":
+                # Custom период - используем диапазон дат
+                from_date = getattr(self, 'custom_from_date', None)
+                to_date = getattr(self, 'custom_to_date', None)
+                if from_date and to_date:
+                    self.today_sessions = [dict(row) for row in self.db.get_sessions_in_range(from_date, to_date + ' 23:59:59')]
+                    self.today_sessions = [s for s in self.today_sessions if s['project_id'] == self.selected_project_id]
+                    period_total = sum([(s['duration'] or 0) for s in self.today_sessions])
+                    period_label = f"{from_date} - {to_date}"
+                else:
+                    self.today_sessions = []
+                    period_total = 0
+                    period_label = t('custom_period')
+            else:
+                self.today_sessions = [dict(row) for row in self.db.get_sessions_by_project(self.selected_project_id, self.current_filter)]
+                period_total = self.db.get_project_total(self.selected_project_id, self.current_filter)
+                
+                if self.current_filter == "today":
+                    period_label = t('today_label')
+                elif self.current_filter == "week":
+                    period_label = t('week_label')
+                else:
+                    period_label = t('month_label')
             
             # Находим проект для отображения ставки
             project = next((p for p in self.projects_cache if p['id'] == self.selected_project_id), None)
-            if self.current_filter == "today":
-                period_label = t('today_label')
-            elif self.current_filter == "week":
-                period_label = t('week_label')
-            else:
-                period_label = t('month_label')
             
             # Добавляем стоимость если есть ставка
             if project and project['hourly_rate'] > 0:
@@ -580,7 +653,19 @@ class TimeTrackerWindowController(NSObject):
                 period_label += f" (${cost:.2f})"
         else:
             # Все проекты
-            if self.current_filter == "today":
+            if self.current_filter == "custom":
+                # Custom период
+                from_date = getattr(self, 'custom_from_date', None)
+                to_date = getattr(self, 'custom_to_date', None)
+                if from_date and to_date:
+                    self.today_sessions = [dict(row) for row in self.db.get_sessions_in_range(from_date, to_date + ' 23:59:59')]
+                    period_total = sum([(s['duration'] or 0) for s in self.today_sessions])
+                    period_label = f"{from_date} - {to_date}"
+                else:
+                    self.today_sessions = []
+                    period_total = 0
+                    period_label = t('custom_period')
+            elif self.current_filter == "today":
                 self.today_sessions = [dict(row) for row in self.db.get_today_sessions()]
                 period_total = sum([(s['duration'] or 0) for s in self.today_sessions])
                 period_label = t('today_label')
@@ -722,6 +807,23 @@ class TimeTrackerWindowController(NSObject):
             container.addSubview_(durationLabel)
             NSLog(f"=== Duration label added ===")
 
+            # Кнопка "Оплачено" (зеленая галочка)
+            paidBtn = HoverDeleteButton.alloc().initWithFrame_(NSMakeRect(width - 52, 12, 18, 18))
+            paidBtn.setTitle_("✓")
+            paidBtn.setBordered_(False)
+            paidBtn.setBezelStyle_(0)
+            paidBtn.setFont_(NSFont.systemFontOfSize_weight_(14, 0.2))
+            paidBtn.setTarget_(self)
+            paidBtn.setAction_(objc.selector(self.markSessionAsPaid_, signature=b"v@:"))
+            paidBtn.setTag_(session_id)
+            # Зеленый цвет для кнопки оплаты
+            paidBtn.setContentTintColor_(NSColor.colorWithRed_green_blue_alpha_(0.2, 0.7, 0.3, 0.9))
+            paidBtn.setWantsLayer_(True)
+            paidBtn.layer().setCornerRadius_(9)
+            paidBtn.layer().setBackgroundColor_(NSColor.colorWithWhite_alpha_(0.95, 0.7).CGColor())
+            container.addSubview_(paidBtn)
+            NSLog(f"=== Paid button added ===")
+
             # Кнопка удаления в стиле macOS с hover эффектом
             deleteBtn = HoverDeleteButton.alloc().initWithFrame_(NSMakeRect(width - 28, 12, 18, 18))
             deleteBtn.setTitle_("✕")
@@ -741,7 +843,7 @@ class TimeTrackerWindowController(NSObject):
             
             # Кнопка выбора (прозрачная, на весь ряд кроме области удаления)
             # Добавляем последней, чтобы она была поверх всех текстовых полей
-            selectBtn = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, width - 30, 40))
+            selectBtn = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, width - 55, 40))
             selectBtn.setBordered_(False)
             selectBtn.setTitle_("")
             selectBtn.setTarget_(self)
@@ -767,6 +869,7 @@ class TimeTrackerWindowController(NSObject):
         except ImportError:
             from Cocoa import NSOnState as NSControlStateValueOn, NSOffState as NSControlStateValueOff
         
+        self.customFilterBtn.setState_(NSControlStateValueOn if self.current_filter == "custom" else NSControlStateValueOff)
         self.todayFilterBtn.setState_(NSControlStateValueOn if self.current_filter == "today" else NSControlStateValueOff)
         self.weekFilterBtn.setState_(NSControlStateValueOn if self.current_filter == "week" else NSControlStateValueOff)
         self.monthFilterBtn.setState_(NSControlStateValueOn if self.current_filter == "month" else NSControlStateValueOff)
@@ -775,6 +878,12 @@ class TimeTrackerWindowController(NSObject):
         NSLog(f"=== setFilterToday called, current_filter was: {self.current_filter} ===")
         self.current_filter = "today"
         NSLog(f"=== setFilterToday new filter: {self.current_filter} ===")
+        # Скрываем поля custom периода
+        self.fromDateLabel.setHidden_(True)
+        self.fromDatePicker.setHidden_(True)
+        self.toDateLabel.setHidden_(True)
+        self.toDatePicker.setHidden_(True)
+        self.applyCustomFilterBtn.setHidden_(True)
         self.reloadSessions()
 
     def selectSession_(self, sender):
@@ -808,17 +917,103 @@ class TimeTrackerWindowController(NSObject):
         except Exception as e:
             NSLog(f"deleteSessionButton_ error: {e}")
     
+    def markSessionAsPaid_(self, sender):
+        """Отметить сессию как оплаченную"""
+        try:
+            session_id = sender.tag()
+            if session_id is None or session_id < 0:
+                return
+            
+            # Подтверждение
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('mark_as_paid_title'))
+            alert.setInformativeText_(t('mark_as_paid_message'))
+            alert.addButtonWithTitle_(t('yes'))
+            alert.addButtonWithTitle_(t('cancel'))
+            alert.setAlertStyle_(NSAlertStyleInformational)
+            response = alert.runModal()
+            
+            # NSAlertFirstButtonReturn == 1000
+            if response == 1000:
+                # Отмечаем как оплаченную
+                self.db.mark_session_as_paid(session_id)
+                
+                # Обновляем UI
+                self.reloadSessions()
+        except Exception as e:
+            NSLog(f"markSessionAsPaid_ error: {e}")
+    
     def setFilterWeek_(self, _):
         NSLog(f"=== setFilterWeek called, current_filter was: {self.current_filter} ===")
         self.current_filter = "week"
         NSLog(f"=== setFilterWeek new filter: {self.current_filter} ===")
+        # Скрываем поля custom периода
+        self.fromDateLabel.setHidden_(True)
+        self.fromDatePicker.setHidden_(True)
+        self.toDateLabel.setHidden_(True)
+        self.toDatePicker.setHidden_(True)
+        self.applyCustomFilterBtn.setHidden_(True)
         self.reloadSessions()
     
     def setFilterMonth_(self, _):
         NSLog(f"=== setFilterMonth called, current_filter was: {self.current_filter} ===")
         self.current_filter = "month"
         NSLog(f"=== setFilterMonth new filter: {self.current_filter} ===")
+        # Скрываем поля custom периода
+        self.fromDateLabel.setHidden_(True)
+        self.fromDatePicker.setHidden_(True)
+        self.toDateLabel.setHidden_(True)
+        self.toDatePicker.setHidden_(True)
+        self.applyCustomFilterBtn.setHidden_(True)
         self.reloadSessions()
+    
+    def setFilterCustom_(self, _):
+        NSLog(f"=== setFilterCustom called, current_filter was: {self.current_filter} ===")
+        # Показываем/скрываем поля выбора дат
+        is_hidden = self.fromDatePicker.isHidden()
+        self.fromDateLabel.setHidden_(not is_hidden)
+        self.fromDatePicker.setHidden_(not is_hidden)
+        self.toDateLabel.setHidden_(not is_hidden)
+        self.toDatePicker.setHidden_(not is_hidden)
+        self.applyCustomFilterBtn.setHidden_(not is_hidden)
+        
+        # Если показываем - применяем фильтр
+        if not is_hidden:
+            self.applyCustomFilter_(None)
+    
+    def applyCustomFilter_(self, _):
+        """Применить фильтр с выбранными датами"""
+        try:
+            from datetime import datetime
+            
+            # Получаем даты из NSDatePicker
+            from_date_obj = self.fromDatePicker.dateValue()
+            to_date_obj = self.toDatePicker.dateValue()
+            
+            # Конвертируем NSDate в строку формата YYYY-MM-DD
+            from_date = from_date_obj.descriptionWithCalendarFormat_timeZone_locale_('%Y-%m-%d', None, None)
+            to_date = to_date_obj.descriptionWithCalendarFormat_timeZone_locale_('%Y-%m-%d', None, None)
+            
+            # Валидация - проверяем что from_date <= to_date
+            if from_date_obj.compare_(to_date_obj) == 1:  # NSOrderedDescending
+                NSLog("From date is after to date")
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_(t('error'))
+                alert.setInformativeText_("Начальная дата должна быть раньше конечной")
+                alert.setAlertStyle_(NSAlertStyleWarning)
+                alert.addButtonWithTitle_("OK")
+                alert.runModal()
+                return
+            
+            # Устанавливаем custom фильтр
+            self.current_filter = "custom"
+            self.custom_from_date = from_date
+            self.custom_to_date = to_date
+            NSLog(f"=== setFilterCustom: from {from_date} to {to_date} ===")
+            self.reloadSessions()
+            
+        except Exception as e:
+            NSLog(f"applyCustomFilter_ error: {e}")
     
     def projectSelected_(self, sender):
         """Обработчик выбора проекта в dropdown"""
@@ -1235,7 +1430,8 @@ class TimeTrackerWindowController(NSObject):
         defaults = NSUserDefaults.standardUserDefaults()
         interval_minutes = defaults.integerForKey_("reminderInterval")
         if interval_minutes <= 0:
-            interval_minutes = 60  # По умолчанию 60 минут
+            # В DEV режиме - 1 минута для тестирования, в продакшене - 60 минут
+            interval_minutes = 1 if DEV_MODE else 60
         
         interval_seconds = interval_minutes * 60.0
         
@@ -1270,6 +1466,16 @@ class TimeTrackerWindowController(NSObject):
         
         NSLog("Показываем напоминание пользователю")
         
+        # СНАЧАЛА ОСТАНАВЛИВАЕМ ТАЙМЕР перед показом сообщения
+        NSLog("Останавливаем таймер перед показом сообщения...")
+        paused_session_id = self.current_session_id
+        paused_start_time = self.start_time
+        
+        # Временно останавливаем только визуальный таймер, но не сессию
+        if self.timer_ref is not None:
+            self.timer_ref.invalidate()
+            self.timer_ref = None
+        
         # Получаем информацию о текущей задаче
         try:
             idx = self.projectPopup.indexOfSelectedItem()
@@ -1282,17 +1488,25 @@ class TimeTrackerWindowController(NSObject):
             project_name = "Без названия"
             task_description = ""
         
+        # Вычисляем время работы
+        elapsed_seconds = 0
+        if paused_start_time:
+            elapsed_seconds = int((datetime.now() - paused_start_time).total_seconds())
+        elapsed_str = self.formatDuration(elapsed_seconds)
+        
         # Формируем текст сообщения
         message = f"Проект: {project_name}"
         if task_description:
             message += f"\nЗадача: {task_description}"
+        message += f"\n\nВремя работы: {elapsed_str}"
+        message += f"\n\nТаймер остановлен. Продолжить работу?"
         
         # Создаем alert
         alert = NSAlert.alloc().init()
         alert.setMessageText_(t('still_working_question'))
         alert.setInformativeText_(message)
-        alert.addButtonWithTitle_(t('yes'))
-        alert.addButtonWithTitle_(t('no'))
+        alert.addButtonWithTitle_(t('yes'))  # Продолжить
+        alert.addButtonWithTitle_(t('no'))   # Завершить
         alert.setAlertStyle_(1)  # NSInformationalAlertStyle
         
         # Показываем alert и обрабатываем ответ
@@ -1300,31 +1514,54 @@ class TimeTrackerWindowController(NSObject):
         response = alert.runModal()
         NSLog(f"Получен ответ: {response}")
         
-        # NSAlertFirstButtonReturn = 1000 (Да)
-        # NSAlertSecondButtonReturn = 1001 (Нет)
-        if response == 1001:  # Нажата кнопка "Нет"
-            NSLog("!!! ПОЛЬЗОВАТЕЛЬ НАЖАЛ 'НЕТ' - НАЧИНАЕМ ОСТАНОВКУ !!!")
-            NSLog(f"Текущее состояние timer_running: {self.timer_running}")
-            NSLog(f"Текущая сессия ID: {self.current_session_id}")
+        # NSAlertFirstButtonReturn = 1000 (Да - продолжить)
+        # NSAlertSecondButtonReturn = 1001 (Нет - завершить)
+        if response == 1001:  # Нажата кнопка "Нет" - ЗАВЕРШИТЬ ЗАДАЧУ
+            NSLog("!!! ПОЛЬЗОВАТЕЛЬ НАЖАЛ 'НЕТ' - ЗАВЕРШАЕМ ЗАДАЧУ !!!")
             
-            # Попробуем остановить таймер напрямую из этого метода
-            # но с защитой от ошибок
             try:
-                NSLog("Пытаемся остановить таймер напрямую...")
-                if self.timer_running:
-                    # Останавливаем таймер напоминаний сразу
+                # Полностью останавливаем таймер и закрываем сессию
+                if paused_session_id and self.timer_running:
+                    NSLog(f"Завершаем сессию {paused_session_id}")
+                    self.timer_running = False
+                    self.db.stop_session(paused_session_id)
+                    self.current_session_id = None
+                    self.start_time = None
+                    self.timerLabel.setStringValue_("00:00:00")
+                    self.toggleBtn.setTitle_(t('start'))
+                    
+                    # Останавливаем таймер напоминаний
                     self._stopHourlyReminder()
-                    # Останавливаем основной таймер
-                    self.toggleTimer_(None)
-                    NSLog("Таймер успешно остановлен!")
-                else:
-                    NSLog("Таймер уже был остановлен")
+                    
+                    # Обновляем UI
+                    self.reloadSessions()
+                    
+                    # Обновляем статус-бар
+                    try:
+                        NSApp.delegate().updateStatusItem()
+                    except Exception:
+                        pass
+                    
+                    NSLog("Задача успешно завершена!")
             except Exception as e:
-                NSLog(f"ОШИБКА при остановке таймера: {e}")
+                NSLog(f"ОШИБКА при завершении задачи: {e}")
                 import traceback
                 traceback.print_exc()
-        else:
+        else:  # Нажата кнопка "Да" - ПРОДОЛЖИТЬ РАБОТУ
             NSLog("Пользователь ответил 'Да', продолжаем работу")
+            
+            # Возобновляем таймер
+            NSLog("Возобновляем таймер...")
+            if self.timer_running and paused_session_id:
+                # Перезапускаем визуальный таймер
+                self.timer_ref = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                    1.0,
+                    self,
+                    objc.selector(self.tick_, signature=b"v@:@"),
+                    None,
+                    True
+                )
+                NSLog("Таймер успешно возобновлен!")
     
     def _stopTimerFromReminder_(self, sender):
         """Безопасная остановка таймера из напоминания"""
@@ -2826,8 +3063,8 @@ class AllTasksWindowController(NSObject):
         content.addSubview_(self.projectPopup)
         
         # Label з загальною статистикою
-        self.statsLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(620, filterY, 260, 20))
-        self.statsLabel.setStringValue_("Всього: 0 задач, 00:00:00")
+        self.statsLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(600, filterY, 280, 20))
+        self.statsLabel.setStringValue_("Всього: 0 задач, 00:00:00, $0.00")
         self.statsLabel.setBezeled_(False)
         self.statsLabel.setDrawsBackground_(False)
         self.statsLabel.setEditable_(False)
@@ -2844,17 +3081,17 @@ class AllTasksWindowController(NSObject):
         
         # Колонки таблиці
         col1 = NSTableColumn.alloc().initWithIdentifier_("description")
-        col1.setWidth_((width-40) * 0.35)
+        col1.setWidth_((width-40) * 0.30)
         col1.headerCell().setStringValue_("Опис")
         self.tableView.addTableColumn_(col1)
         
         col2 = NSTableColumn.alloc().initWithIdentifier_("project")
-        col2.setWidth_((width-40) * 0.20)
+        col2.setWidth_((width-40) * 0.18)
         col2.headerCell().setStringValue_("Проект")
         self.tableView.addTableColumn_(col2)
         
         col3 = NSTableColumn.alloc().initWithIdentifier_("date")
-        col3.setWidth_((width-40) * 0.15)
+        col3.setWidth_((width-40) * 0.12)
         col3.headerCell().setStringValue_("Дата")
         self.tableView.addTableColumn_(col3)
         
@@ -2864,9 +3101,14 @@ class AllTasksWindowController(NSObject):
         self.tableView.addTableColumn_(col4)
         
         col5 = NSTableColumn.alloc().initWithIdentifier_("duration")
-        col5.setWidth_((width-40) * 0.15)
+        col5.setWidth_((width-40) * 0.12)
         col5.headerCell().setStringValue_("Тривалість")
         self.tableView.addTableColumn_(col5)
+        
+        col6 = NSTableColumn.alloc().initWithIdentifier_("cost")
+        col6.setWidth_((width-40) * 0.13)
+        col6.headerCell().setStringValue_("Вартість")
+        self.tableView.addTableColumn_(col6)
         
         self.tableView.setDelegate_(self)
         self.tableView.setDataSource_(self)
@@ -2935,7 +3177,15 @@ class AllTasksWindowController(NSObject):
         hours = total_duration // 3600
         minutes = (total_duration % 3600) // 60
         seconds = total_duration % 60
-        self.statsLabel.setStringValue_(f"Всього: {len(self.all_sessions)} задач, {hours:02d}:{minutes:02d}:{seconds:02d}")
+        
+        # Рахуємо загальну вартість
+        total_cost = 0
+        for s in self.all_sessions:
+            duration_hours = s['duration'] / 3600.0
+            hourly_rate = s.get('hourly_rate', 0) or 0
+            total_cost += duration_hours * hourly_rate
+        
+        self.statsLabel.setStringValue_(f"Всього: {len(self.all_sessions)} задач, {hours:02d}:{minutes:02d}:{seconds:02d}, ${total_cost:.2f}")
         
         self.tableView.reloadData()
     
@@ -2984,8 +3234,39 @@ class AllTasksWindowController(NSObject):
             minutes = (duration % 3600) // 60
             seconds = duration % 60
             return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        elif identifier == "cost":
+            duration = session.get('duration', 0)
+            hourly_rate = session.get('hourly_rate', 0) or 0
+            if hourly_rate > 0:
+                duration_hours = duration / 3600.0
+                cost = duration_hours * hourly_rate
+                return f"${cost:.2f}"
+            return "$0.00"
         
         return ""
+    
+    def tableView_willDisplayCell_forTableColumn_row_(self, tableView, cell, tableColumn, row):
+        """Устанавливаем цвет фона для оплаченных задач"""
+        if row >= len(self.all_sessions):
+            return
+        
+        session = self.all_sessions[row]
+        is_paid = session.get('paid', 0) == 1
+        
+        if is_paid:
+            # Салатовый фон для оплаченных задач (светло-зеленый)
+            # RGB: (217, 242, 217) -> (0.85, 0.95, 0.85)
+            paid_color = NSColor.colorWithRed_green_blue_alpha_(0.85, 0.95, 0.85, 1.0)
+            cell.setBackgroundColor_(paid_color)
+            cell.setDrawsBackground_(True)
+        else:
+            # Обычный белый фон для неоплаченных
+            try:
+                # Пытаемся использовать системный цвет фона
+                cell.setBackgroundColor_(NSColor.controlBackgroundColor())
+            except:
+                cell.setBackgroundColor_(NSColor.whiteColor())
+            cell.setDrawsBackground_(True)
     
     def windowDidResize_(self, notification):
         """Обробка зміни розміру вікна - оновлюємо ширину колонок"""
@@ -2996,12 +3277,13 @@ class AllTasksWindowController(NSObject):
             
             # Оновлюємо ширину колонок пропорційно
             columns = self.tableView.tableColumns()
-            if len(columns) >= 5:
-                columns[0].setWidth_(new_width * 0.35)  # Опис
-                columns[1].setWidth_(new_width * 0.20)  # Проект
-                columns[2].setWidth_(new_width * 0.15)  # Дата
+            if len(columns) >= 6:
+                columns[0].setWidth_(new_width * 0.30)  # Опис
+                columns[1].setWidth_(new_width * 0.18)  # Проект
+                columns[2].setWidth_(new_width * 0.12)  # Дата
                 columns[3].setWidth_(new_width * 0.15)  # Час
-                columns[4].setWidth_(new_width * 0.15)  # Тривалість
+                columns[4].setWidth_(new_width * 0.12)  # Тривалість
+                columns[5].setWidth_(new_width * 0.13)  # Вартість
 
 
 class AppDelegate(NSObject):
