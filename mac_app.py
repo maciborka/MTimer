@@ -304,7 +304,7 @@ class TimeTrackerWindowController(NSObject):
         content.addSubview_(self.monthFilterBtn)
         
         # Поля выбора дат (по умолчанию скрыты) - размещаются НИЖЕ кнопки
-        customDateY = filterY - 35
+        customDateY = filterY - 60
         
         # Метка "С:"
         self.fromDateLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(filterX, customDateY, 25, 20))
@@ -319,7 +319,7 @@ class TimeTrackerWindowController(NSObject):
         from datetime import datetime, timedelta
         self.fromDatePicker = NSDatePicker.alloc().initWithFrame_(NSMakeRect(filterX + 30, customDateY - 2, 140, 24))
         self.fromDatePicker.setDatePickerStyle_(0)  # NSDatePickerStyleTextFieldAndStepper
-        self.fromDatePicker.setDatePickerElements_(14)  # NSYearMonthDayDatePickerElementFlag
+        self.fromDatePicker.setDatePickerElements_(224)  # 0x00e0 = NSYearMonthDayDatePickerElementFlag
         default_from_date = datetime.now() - timedelta(days=30)
         self.fromDatePicker.setDateValue_(default_from_date)
         self.fromDatePicker.setHidden_(True)
@@ -337,7 +337,7 @@ class TimeTrackerWindowController(NSObject):
         # NSDatePicker для выбора даты "до"
         self.toDatePicker = NSDatePicker.alloc().initWithFrame_(NSMakeRect(filterX + 210, customDateY - 2, 140, 24))
         self.toDatePicker.setDatePickerStyle_(0)  # NSDatePickerStyleTextFieldAndStepper
-        self.toDatePicker.setDatePickerElements_(14)  # NSYearMonthDayDatePickerElementFlag
+        self.toDatePicker.setDatePickerElements_(224)  # 0x00e0 = NSYearMonthDayDatePickerElementFlag
         self.toDatePicker.setDateValue_(datetime.now())
         self.toDatePicker.setHidden_(True)
         content.addSubview_(self.toDatePicker)
@@ -352,7 +352,7 @@ class TimeTrackerWindowController(NSObject):
         content.addSubview_(self.applyCustomFilterBtn)
         
         # Поле общего времени
-        self.weekTotalField = NSTextField.alloc().initWithFrame_(NSMakeRect(270, filterY + 0, 300, 20))
+        self.weekTotalField = NSTextField.alloc().initWithFrame_(NSMakeRect(390, filterY + 0, 300, 20))
         self.weekTotalField.setStringValue_("ВСЕГО: 00:00:00")
         self.weekTotalField.setBezeled_(False)
         self.weekTotalField.setDrawsBackground_(False)
@@ -381,7 +381,7 @@ class TimeTrackerWindowController(NSObject):
         content.addSubview_(self.continueBtn)
 
         # Замість таблиці - ScrollView з StackView для списку сесій
-        tableTopMargin = 50
+        tableTopMargin = 80
         tableY = 20
         tableHeight = cardY - 40 - tableTopMargin
         if tableHeight < 100:
@@ -484,10 +484,24 @@ class TimeTrackerWindowController(NSObject):
             
             # Фильтры и метки
             filterY = cardY - 30
-            self.todayFilterBtn.setFrame_(NSMakeRect(20, filterY, 80, 24))
-            self.weekFilterBtn.setFrame_(NSMakeRect(105, filterY, 80, 24))
-            self.monthFilterBtn.setFrame_(NSMakeRect(190, filterY, 80, 24))
-            self.weekTotalField.setFrame_(NSMakeRect(270, filterY, 300, 20))
+            filterX = 20
+            
+            # Кнопки фильтра периода
+            self.customFilterBtn.setFrame_(NSMakeRect(filterX, filterY, 110, 24))
+            self.todayFilterBtn.setFrame_(NSMakeRect(filterX + 115, filterY, 80, 24))
+            self.weekFilterBtn.setFrame_(NSMakeRect(filterX + 200, filterY, 80, 24))
+            self.monthFilterBtn.setFrame_(NSMakeRect(filterX + 285, filterY, 80, 24))
+            
+            # Элементы DatePicker для кастомного периода
+            customDateY = filterY - 60
+            self.fromDateLabel.setFrame_(NSMakeRect(filterX, customDateY, 25, 20))
+            self.fromDatePicker.setFrame_(NSMakeRect(filterX + 30, customDateY - 2, 140, 24))
+            self.toDateLabel.setFrame_(NSMakeRect(filterX + 180, customDateY, 25, 20))
+            self.toDatePicker.setFrame_(NSMakeRect(filterX + 210, customDateY - 2, 140, 24))
+            self.applyCustomFilterBtn.setFrame_(NSMakeRect(filterX + 360, customDateY - 2, 80, 24))
+            
+            # Поля с общим временем и кнопки
+            self.weekTotalField.setFrame_(NSMakeRect(390, filterY, 300, 20))
             self.todayTotalField.setFrame_(NSMakeRect(width-200, filterY + 2, 160, 20))
             self.continueBtn.setFrame_(NSMakeRect(width-360, filterY, 140, 24))
             self.statisticsBtn.setFrame_(NSMakeRect(20, filterY - 30, 120, 24))
