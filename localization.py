@@ -155,6 +155,33 @@ TRANSLATIONS = {
         'language_hungarian': 'Hungarian',
         'language_description': 'Select interface language',
         'language_saved': 'Language changed to {0}.\n\nRestart the application to apply changes.',
+        
+        # Меню "Данные"
+        'data_menu': 'Data',
+        'companies_menu': 'Companies',
+        'projects_menu': 'Projects',
+        'work_types_menu': 'Work Types',
+        
+        # Интеграции
+        'integrations': 'Integrations',
+        'integrations_placeholder': 'Integration settings will be here\n(GitHub, Jira, Slack, etc.)',
+        
+        # Управление компаниями
+        'manage_companies': 'Manage Companies',
+        'code': 'Code',
+        'company_name': 'Company Name',
+        'add': 'Add',
+        'add_company': 'Add Company',
+        'identification_code': 'Identification Code:',
+        'enter_code_and_name': 'Enter identification code and full company name',
+        'edit_company': 'Edit Company',
+        'change_code_and_name': 'Change code and company name',
+        'full_company_name': 'Full company name',
+        
+        # Управление видами работ
+        'manage_work_types': 'Manage Work Types',
+        'name': 'Name',
+        'description': 'Description',
     },
     'ru': {
         # Основные элементы
@@ -301,6 +328,33 @@ TRANSLATIONS = {
         'language_hungarian': 'Венгерский',
         'language_description': 'Выберите язык интерфейса',
         'language_saved': 'Язык изменен на {0}.\n\nПерезапустите приложение для применения изменений.',
+        
+        # Меню "Данные"
+        'data_menu': 'Данные',
+        'companies_menu': 'Компании',
+        'projects_menu': 'Проекты',
+        'work_types_menu': 'Виды работ',
+        
+        # Интеграции
+        'integrations': 'Интеграции',
+        'integrations_placeholder': 'Здесь будут настройки интеграций\n(GitHub, Jira, Slack и др.)',
+        
+        # Управление компаниями
+        'manage_companies': 'Управление компаниями',
+        'code': 'Код',
+        'company_name': 'Название компании',
+        'add': 'Добавить',
+        'add_company': 'Добавить компанию',
+        'identification_code': 'Идентификационный код:',
+        'enter_code_and_name': 'Введите идентификационный код и полное название компании',
+        'edit_company': 'Редактирование компании',
+        'change_code_and_name': 'Измените код и название компании',
+        'full_company_name': 'Полное название компании',
+        
+        # Управление видами работ
+        'manage_work_types': 'Управление видами работ',
+        'name': 'Название',
+        'description': 'Описание',
     },
     'uk': {
         # Основні елементи
@@ -447,6 +501,33 @@ TRANSLATIONS = {
         'language_hungarian': 'Угорська',
         'language_description': 'Оберіть мову інтерфейсу',
         'language_saved': 'Мову змінено на {0}.\n\nПерезапустіть програму для застосування змін.',
+        
+        # Меню "Дані"
+        'data_menu': 'Дані',
+        'companies_menu': 'Компанії',
+        'projects_menu': 'Проекти',
+        'work_types_menu': 'Види робіт',
+        
+        # Інтеграції
+        'integrations': 'Інтеграції',
+        'integrations_placeholder': 'Тут будуть налаштування інтеграцій\n(GitHub, Jira, Slack та ін.)',
+        
+        # Управління компаніями
+        'manage_companies': 'Управління компаніями',
+        'code': 'Код',
+        'company_name': 'Назва компанії',
+        'add': 'Додати',
+        'add_company': 'Додати компанію',
+        'identification_code': 'Ідентифікаційний код:',
+        'enter_code_and_name': 'Введіть ідентифікаційний код та повну назву компанії',
+        'edit_company': 'Редагування компанії',
+        'change_code_and_name': 'Змініть код і назву компанії',
+        'full_company_name': 'Повна назва компанії',
+        
+        # Управління видами робіт
+        'manage_work_types': 'Управління видами робіт',
+        'name': 'Назва',
+        'description': 'Опис',
     },
     'hu': {
         # Основні елементи
@@ -593,6 +674,33 @@ TRANSLATIONS = {
         'language_hungarian': 'Magyar',
         'language_description': 'Válaszd ki a felület nyelvét',
         'language_saved': 'Nyelv megváltoztatva: {0}.\n\nIndítsd újra az alkalmazást a változások alkalmazásához.',
+        
+        # "Adatok" menü
+        'data_menu': 'Adatok',
+        'companies_menu': 'Cégek',
+        'projects_menu': 'Projektek',
+        'work_types_menu': 'Munkatípusok',
+        
+        # Integrációk
+        'integrations': 'Integrációk',
+        'integrations_placeholder': 'Itt lesznek az integrációs beállítások\n(GitHub, Jira, Slack stb.)',
+        
+        # Cégek kezelése
+        'manage_companies': 'Cégek kezelése',
+        'code': 'Kód',
+        'company_name': 'Cégnév',
+        'add': 'Hozzáadás',
+        'add_company': 'Cég hozzáadása',
+        'identification_code': 'Azonosító kód:',
+        'enter_code_and_name': 'Add meg az azonosító kódot és a teljes cégnevet',
+        'edit_company': 'Cég szerkesztése',
+        'change_code_and_name': 'Módosítsd a kódot és a cégnevet',
+        'full_company_name': 'Teljes cégnév',
+        
+        # Munkatípusok kezelése
+        'manage_work_types': 'Munkatípusok kezelése',
+        'name': 'Név',
+        'description': 'Leírás',
     }
 }
 

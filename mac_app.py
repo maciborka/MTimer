@@ -1996,12 +1996,12 @@ class ProjectSettingsWindowController(NSObject):
         
         # Вкладка 3: Интеграции
         integrationsTab = NSTabViewItem.alloc().initWithIdentifier_("integrations")
-        integrationsTab.setLabel_("Интеграции")
+        integrationsTab.setLabel_(t('integrations'))
         integrationsView = NSView.alloc().initWithFrame_(tabView.contentRect())
         
         # Заглушка для будущих интеграций
         placeholderLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 60, width-60, 40))
-        placeholderLabel.setStringValue_("Здесь будут настройки интеграций\n(GitHub, Jira, Slack и др.)")
+        placeholderLabel.setStringValue_(t('integrations_placeholder'))
         placeholderLabel.setBezeled_(False)
         placeholderLabel.setDrawsBackground_(False)
         placeholderLabel.setEditable_(False)
@@ -2728,7 +2728,7 @@ class CompaniesWindowController(NSObject):
             2,
             False
         )
-        self.window.setTitle_("Управление компаниями")
+        self.window.setTitle_(t('manage_companies'))
         self.window.setReleasedWhenClosed_(False)
         
         content = self.window.contentView()
@@ -2742,12 +2742,12 @@ class CompaniesWindowController(NSObject):
         self.tableView.setDataSource_(self)
         
         col1 = NSTableColumn.alloc().initWithIdentifier_("code")
-        col1.setTitle_("Код")
+        col1.setTitle_(t('code'))
         col1.setWidth_(100)
         self.tableView.addTableColumn_(col1)
         
         col2 = NSTableColumn.alloc().initWithIdentifier_("name")
-        col2.setTitle_("Название компании")
+        col2.setTitle_(t('company_name'))
         col2.setWidth_(400)
         self.tableView.addTableColumn_(col2)
         
@@ -2756,21 +2756,21 @@ class CompaniesWindowController(NSObject):
         
         # Кнопки
         addBtn = NSButton.alloc().initWithFrame_(NSMakeRect(20, 20, 100, 32))
-        addBtn.setTitle_("Добавить")
+        addBtn.setTitle_(t('add'))
         addBtn.setBezelStyle_(NSBezelStyleRounded)
         addBtn.setTarget_(self)
         addBtn.setAction_(objc.selector(self.addCompany_, signature=b"v@:@"))
         content.addSubview_(addBtn)
         
         editBtn = NSButton.alloc().initWithFrame_(NSMakeRect(130, 20, 120, 32))
-        editBtn.setTitle_("Редактировать")
+        editBtn.setTitle_(t('edit'))
         editBtn.setBezelStyle_(NSBezelStyleRounded)
         editBtn.setTarget_(self)
         editBtn.setAction_(objc.selector(self.editCompany_, signature=b"v@:@"))
         content.addSubview_(editBtn)
         
         delBtn = NSButton.alloc().initWithFrame_(NSMakeRect(260, 20, 100, 32))
-        delBtn.setTitle_("Удалить")
+        delBtn.setTitle_(t('delete'))
         delBtn.setBezelStyle_(NSBezelStyleRounded)
         delBtn.setTarget_(self)
         delBtn.setAction_(objc.selector(self.deleteCompany_, signature=b"v@:@"))
@@ -2798,17 +2798,17 @@ class CompaniesWindowController(NSObject):
     def addCompany_(self, sender):
         # Создаем диалог с полями ввода
         alert = NSAlert.alloc().init()
-        alert.setMessageText_("Новая компания")
-        alert.setInformativeText_("Введите идентификационный код и полное название компании")
-        alert.addButtonWithTitle_("Создать")
-        alert.addButtonWithTitle_("Отмена")
+        alert.setMessageText_(t('add_company'))
+        alert.setInformativeText_(t('enter_code_and_name'))
+        alert.addButtonWithTitle_(t('create'))
+        alert.addButtonWithTitle_(t('cancel'))
         
         # Создаем view с полями ввода
         accessoryView = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 300, 110))
         
         # Поле "Код"
         codeLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 85, 100, 20))
-        codeLabel.setStringValue_("Код:")
+        codeLabel.setStringValue_(t('code') + ":")
         codeLabel.setBezeled_(False)
         codeLabel.setDrawsBackground_(False)
         codeLabel.setEditable_(False)
@@ -2821,7 +2821,7 @@ class CompaniesWindowController(NSObject):
         
         # Поле "Название"
         nameLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 35, 100, 20))
-        nameLabel.setStringValue_("Название:")
+        nameLabel.setStringValue_(t('name') + ":")
         nameLabel.setBezeled_(False)
         nameLabel.setDrawsBackground_(False)
         nameLabel.setEditable_(False)
@@ -2829,7 +2829,7 @@ class CompaniesWindowController(NSObject):
         accessoryView.addSubview_(nameLabel)
         
         nameField = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 10, 300, 25))
-        nameField.setPlaceholderString_("Полное название компании")
+        nameField.setPlaceholderString_(t('full_company_name'))
         accessoryView.addSubview_(nameField)
         
         alert.setAccessoryView_(accessoryView)
@@ -2871,17 +2871,17 @@ class CompaniesWindowController(NSObject):
         
         # Создаем диалог с полями ввода
         alert = NSAlert.alloc().init()
-        alert.setMessageText_("Редактирование компании")
-        alert.setInformativeText_("Измените код и название компании")
-        alert.addButtonWithTitle_("Сохранить")
-        alert.addButtonWithTitle_("Отмена")
+        alert.setMessageText_(t('edit_company'))
+        alert.setInformativeText_(t('change_code_and_name'))
+        alert.addButtonWithTitle_(t('save'))
+        alert.addButtonWithTitle_(t('cancel'))
         
         # Создаем view с полями ввода
         accessoryView = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 300, 110))
         
         # Поле "Идентификационный код"
         codeLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 85, 200, 20))
-        codeLabel.setStringValue_("Идентификационный код:")
+        codeLabel.setStringValue_(t('identification_code'))
         codeLabel.setBezeled_(False)
         codeLabel.setDrawsBackground_(False)
         codeLabel.setEditable_(False)
@@ -2895,7 +2895,7 @@ class CompaniesWindowController(NSObject):
         
         # Поле "Название"
         nameLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 35, 100, 20))
-        nameLabel.setStringValue_("Название:")
+        nameLabel.setStringValue_(t('name') + ":")
         nameLabel.setBezeled_(False)
         nameLabel.setDrawsBackground_(False)
         nameLabel.setEditable_(False)
@@ -2904,7 +2904,7 @@ class CompaniesWindowController(NSObject):
         
         nameField = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 10, 300, 25))
         nameField.setStringValue_(company['name'])
-        nameField.setPlaceholderString_("Полное название компании")
+        nameField.setPlaceholderString_(t('full_company_name'))
         accessoryView.addSubview_(nameField)
         
         alert.setAccessoryView_(accessoryView)
@@ -2973,7 +2973,7 @@ class WorkTypesWindowController(NSObject):
             2,
             False
         )
-        self.window.setTitle_("Управление видами работ")
+        self.window.setTitle_(t('manage_work_types'))
         self.window.setReleasedWhenClosed_(False)
         
         content = self.window.contentView()
@@ -2987,12 +2987,12 @@ class WorkTypesWindowController(NSObject):
         self.tableView.setDataSource_(self)
         
         col1 = NSTableColumn.alloc().initWithIdentifier_("name")
-        col1.setTitle_("Название")
+        col1.setTitle_(t('name'))
         col1.setWidth_(200)
         self.tableView.addTableColumn_(col1)
         
         col2 = NSTableColumn.alloc().initWithIdentifier_("description")
-        col2.setTitle_("Описание")
+        col2.setTitle_(t('description'))
         col2.setWidth_(350)
         self.tableView.addTableColumn_(col2)
         
@@ -3001,21 +3001,21 @@ class WorkTypesWindowController(NSObject):
         
         # Кнопки
         addBtn = NSButton.alloc().initWithFrame_(NSMakeRect(20, 20, 100, 32))
-        addBtn.setTitle_("Добавить")
+        addBtn.setTitle_(t('add'))
         addBtn.setBezelStyle_(NSBezelStyleRounded)
         addBtn.setTarget_(self)
         addBtn.setAction_(objc.selector(self.addWorkType_, signature=b"v@:@"))
         content.addSubview_(addBtn)
         
         editBtn = NSButton.alloc().initWithFrame_(NSMakeRect(130, 20, 120, 32))
-        editBtn.setTitle_("Редактировать")
+        editBtn.setTitle_(t('edit'))
         editBtn.setBezelStyle_(NSBezelStyleRounded)
         editBtn.setTarget_(self)
         editBtn.setAction_(objc.selector(self.editWorkType_, signature=b"v@:@"))
         content.addSubview_(editBtn)
         
         delBtn = NSButton.alloc().initWithFrame_(NSMakeRect(260, 20, 100, 32))
-        delBtn.setTitle_("Удалить")
+        delBtn.setTitle_(t('delete'))
         delBtn.setBezelStyle_(NSBezelStyleRounded)
         delBtn.setTarget_(self)
         delBtn.setAction_(objc.selector(self.deleteWorkType_, signature=b"v@:@"))
@@ -3692,22 +3692,22 @@ class AppDelegate(NSObject):
             # Data menu (Данные)
             dataMenuItem = NSMenuItem.alloc().init()
             mainMenu.addItem_(dataMenuItem)
-            dataMenu = NSMenu.alloc().initWithTitle_("Данные")
+            dataMenu = NSMenu.alloc().initWithTitle_(t('data_menu'))
             
             companiesItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                "Компании", objc.selector(self.openCompanies_, signature=b"v@:@"), ""
+                t('companies_menu'), objc.selector(self.openCompanies_, signature=b"v@:@"), ""
             )
             companiesItem.setTarget_(self)
             dataMenu.addItem_(companiesItem)
             
             projectsItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                "Проекты", objc.selector(self.openSettings_, signature=b"v@:@"), ""
+                t('projects_menu'), objc.selector(self.openSettings_, signature=b"v@:@"), ""
             )
             projectsItem.setTarget_(self)
             dataMenu.addItem_(projectsItem)
             
             workTypesItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                "Виды работ", objc.selector(self.openWorkTypes_, signature=b"v@:@"), ""
+                t('work_types_menu'), objc.selector(self.openWorkTypes_, signature=b"v@:@"), ""
             )
             workTypesItem.setTarget_(self)
             dataMenu.addItem_(workTypesItem)

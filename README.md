@@ -1,6 +1,6 @@
 # MTimer — Нативний тайм-трекер для macOS
 
-[🇬🇧 English](#english) | [🇷🇺 Русский](#russian) | [🇭🇺 Magyar](#hungarian)
+[🇬🇧 English](#english) | [Русский](#russian) | [🇭🇺 Magyar](#hungarian)
 
 > **⚠️ Версія 2.0+**: Підтримує лише процесори Apple Silicon (ARM). Процесори Intel більше не підтримуються.
 
@@ -157,7 +157,7 @@ python3 show_stats.py
 <a name="english"></a>
 # MTimer — Native macOS Time Tracker
 
-[🇺🇦 Українська](#) | [🇷🇺 Русский](#russian) | [🇭🇺 Magyar](#hungarian)
+[🇺🇦 Українська](#) | [Русский](#russian) | [🇭🇺 Magyar](#hungarian)
 
 > **⚠️ Version 2.0+**: Supports only Apple Silicon (ARM) processors. Intel processors are no longer supported.
 
@@ -469,7 +469,7 @@ python3 show_stats.py
 <a name="hungarian"></a>
 # MTimer — Natív macOS időkövető
 
-[🇺🇦 Українська](#) | [🇬🇧 English](#english) | [🇷🇺 Русский](#russian)
+[🇺🇦 Українська](#) | [🇬🇧 English](#english) | [Русский](#russian)
 
 > **⚠️ 2.0+ verzió**: Csak az Apple Silicon (ARM) processzorokat támogatja. Az Intel processzorok már nem támogatottak.
 
