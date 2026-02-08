@@ -31,6 +31,8 @@ TRANSLATIONS = {
         'all_projects': 'All Projects',
         'new_project': 'New Project',
         'project_name': 'Project name:',
+        'company': 'Company:',
+        'no_company': 'No company',
         'hourly_rate': 'Hourly rate ($/h):',
         'create': 'Create',
         'cancel': 'Cancel',
@@ -84,6 +86,9 @@ TRANSLATIONS = {
         'save': 'Save',
         'project': 'Project',
         'rate': 'Rate ($/h)',
+        'delete_project': 'Delete Project',
+        'confirm_delete_project': 'Are you sure you want to delete this project? This action cannot be undone.',
+        'cannot_delete_project': 'Cannot delete project with existing sessions',
         
         # Меню приложения
         'about': 'About MTimer',
@@ -173,8 +178,8 @@ TRANSLATIONS = {
         # Проекты
         'all_projects': 'Все проекты',
         'new_project': 'Новый проект',
-        'project_name': 'Название проекта:',
-        'hourly_rate': 'Ставка ($/ч):',
+        'project_name': 'Название проекта:',        'company': 'Компания:',
+        'no_company': 'Без компании',        'hourly_rate': 'Ставка ($/ч):',
         'create': 'Создать',
         'cancel': 'Отмена',
         
@@ -227,6 +232,9 @@ TRANSLATIONS = {
         'save': 'Сохранить',
         'project': 'Проект',
         'rate': 'Ставка (₽/ч)',
+        'delete_project': 'Удалить проект',
+        'confirm_delete_project': 'Вы уверены, что хотите удалить этот проект? Это действие нельзя отменить.',
+        'cannot_delete_project': 'Невозможно удалить проект с существующими задачами',
         
         # Меню приложения
         'about': 'О программе MTimer',
@@ -316,8 +324,8 @@ TRANSLATIONS = {
         # Проекти
         'all_projects': 'Всі проекти',
         'new_project': 'Новий проект',
-        'project_name': 'Назва проекту:',
-        'hourly_rate': 'Ставка ($/година):',
+        'project_name': 'Назва проекту:',        'company': 'Компанія:',
+        'no_company': 'Без компанії',        'hourly_rate': 'Ставка ($/година):',
         'create': 'Створити',
         'cancel': 'Скасувати',
         
@@ -370,6 +378,9 @@ TRANSLATIONS = {
         'save': 'Зберегти',
         'project': 'Проект',
         'rate': 'Ставка ($/година)',
+        'delete_project': 'Видалити проект',
+        'confirm_delete_project': 'Ви впевнені, що хочете видалити цей проект? Цю дію не можна скасувати.',
+        'cannot_delete_project': 'Неможливо видалити проект з існуючими задачами',
         
         # Меню програми
         'about': 'Про програму MTimer',
@@ -459,8 +470,8 @@ TRANSLATIONS = {
         # Projektek
         'all_projects': 'Minden projekt',
         'new_project': 'Új projekt',
-        'project_name': 'Projekt neve:',
-        'hourly_rate': 'Óradíj ($/ó):',
+        'project_name': 'Projekt neve:',        'company': 'Cég:',
+        'no_company': 'Cég nélkül',        'hourly_rate': 'Óradíj ($/ó):',
         'create': 'Létrehozás',
         'cancel': 'Mégse',
         
@@ -513,6 +524,9 @@ TRANSLATIONS = {
         'save': 'Mentés',
         'project': 'Projekt',
         'rate': 'Díj ($/ó)',
+        'delete_project': 'Projekt törlése',
+        'confirm_delete_project': 'Biztosan törölni szeretnéd ezt a projektet? Ez a művelet nem vonható vissza.',
+        'cannot_delete_project': 'Nem lehet törölni a projektet meglévő feladatokkal',
         
         # Alkalmazás menü
         'about': 'Az MTimer névjegye',

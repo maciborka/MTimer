@@ -125,13 +125,13 @@ class Database:
         
         conn.commit()
     
-    def create_project(self, name, color='#0000FF', hourly_rate=0):
+    def create_project(self, name, color='#0000FF', hourly_rate=0, company_id=None):
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            print(f"[DB] Creating project: name={name}, color={color}, hourly_rate={hourly_rate}")
+            print(f"[DB] Creating project: name={name}, color={color}, hourly_rate={hourly_rate}, company_id={company_id}")
             print(f"[DB] Database path: {self.db_path}")
-            cursor.execute('INSERT INTO projects (name, color, hourly_rate) VALUES (?, ?, ?)', (name, color, hourly_rate))
+            cursor.execute('INSERT INTO projects (name, color, hourly_rate, company_id) VALUES (?, ?, ?, ?)', (name, color, hourly_rate, company_id))
             conn.commit()
             project_id = cursor.lastrowid
             print(f"[DB] Project created successfully with ID: {project_id}")
@@ -152,12 +152,12 @@ class Database:
         cursor.execute('UPDATE projects SET hourly_rate = ? WHERE id = ?', (hourly_rate, project_id))
         conn.commit()
     
-    def update_project(self, project_id, name, hourly_rate):
-        """Обновить имя и стоимость проекта"""
+    def update_project(self, project_id, name, hourly_rate, company_id=None):
+        """Обновить имя, стоимость и компанию проекта"""
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute('UPDATE projects SET name = ?, hourly_rate = ? WHERE id = ?', (name, hourly_rate, project_id))
+            cursor.execute('UPDATE projects SET name = ?, hourly_rate = ?, company_id = ? WHERE id = ?', (name, hourly_rate, company_id, project_id))
             conn.commit()
             return True
         except sqlite3.IntegrityError:
@@ -174,6 +174,41 @@ class Database:
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM projects WHERE id = ?', (project_id,))
         return cursor.fetchone()
+    
+    def has_sessions_for_project(self, project_id):
+        """Проверить, есть ли сессии для данного проекта"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) as count FROM time_sessions WHERE project_id = ?', (project_id,))
+        result = cursor.fetchone()
+        count = result['count']
+        print(f"[DB] has_sessions_for_project({project_id}): count={count}")
+        return count > 0
+    
+    def delete_project(self, project_id, force=False):
+        """Удалить проект. Если force=True, удаляет также все сессии проекта."""
+        print(f"[DB] delete_project({project_id}, force={force}) called")
+        has_sessions = self.has_sessions_for_project(project_id)
+        print(f"[DB] has_sessions: {has_sessions}")
+        
+        if has_sessions and not force:
+            print(f"[DB] Cannot delete project {project_id} - has sessions")
+            return False  # Нельзя удалить проект с сессиями
+        
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Если force=True, сначала удаляем все сессии проекта
+        if has_sessions and force:
+            print(f"[DB] Force deleting sessions for project {project_id}")
+            cursor.execute('DELETE FROM time_sessions WHERE project_id = ?', (project_id,))
+            print(f"[DB] Deleted {cursor.rowcount} sessions")
+        
+        print(f"[DB] Deleting project {project_id}")
+        cursor.execute('DELETE FROM projects WHERE id = ?', (project_id,))
+        conn.commit()
+        print(f"[DB] Project {project_id} deleted successfully")
+        return True
     
     def start_session(self, project_id, description=''):
         conn = self.get_connection()

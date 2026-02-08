@@ -23,7 +23,12 @@ from database import Database
 from localization import t, get_localization
 
 # DEV mode: упрощённый запуск из исходников (без статус-бара и уведомлений)
-DEV_MODE = os.environ.get('MTIMER_DEV') == '1' and not getattr(sys, 'frozen', False)
+# Автоматически включается при запуске через python напрямую (не из .app бандла)
+def _is_running_from_bundle():
+    """Проверяет, запущено ли приложение из .app бандла"""
+    return '.app/Contents/' in sys.executable or getattr(sys, 'frozen', False)
+
+DEV_MODE = not _is_running_from_bundle()
 
 # Flipped контейнер для корректной вертикальной разметки сверху вниз
 class FlippedView(NSView):
@@ -1151,11 +1156,11 @@ class TimeTrackerWindowController(NSObject):
     def createProject_(self, _):
         NSLog("=== createProject_ CALLED ===")
         print("[DEBUG] createProject_ function called")
-        # Alert с двумя полями: название и ставка
+        # Alert с тремя полями: название, компания и ставка
         alert = NSAlert.alloc().init()
         NSLog("=== NSAlert created ===")
         alert.setMessageText_(t('new_project'))
-        alert.setInformativeText_(f"{t('project_name')}\n{t('hourly_rate')}")
+        alert.setInformativeText_(f"{t('project_name')}\n{t('company')}\n{t('hourly_rate')}")
         alert.addButtonWithTitle_(t('create'))
         alert.addButtonWithTitle_(t('cancel'))
         alert.setAlertStyle_(NSAlertStyleWarning)
@@ -1168,18 +1173,36 @@ class TimeTrackerWindowController(NSObject):
         except Exception:
             pass
         
-        # Контейнер для полей
-        accessoryView = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 240, 60))
+        # Контейнер для полей (увеличиваем высоту для третьего поля)
+        accessoryView = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 240, 90))
         
-        nameLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 36, 80, 20))
+        nameLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 66, 80, 20))
         nameLabel.setStringValue_(t('project_name'))
         nameLabel.setBezeled_(False)
         nameLabel.setDrawsBackground_(False)
         nameLabel.setEditable_(False)
         accessoryView.addSubview_(nameLabel)
         
-        nameField = NSTextField.alloc().initWithFrame_(NSMakeRect(85, 36, 155, 24))
+        nameField = NSTextField.alloc().initWithFrame_(NSMakeRect(85, 66, 155, 24))
         accessoryView.addSubview_(nameField)
+        
+        # Получаем список компаний
+        companies = self.db.get_all_companies()
+        
+        companyLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 36, 80, 20))
+        companyLabel.setStringValue_(t('company'))
+        companyLabel.setBezeled_(False)
+        companyLabel.setDrawsBackground_(False)
+        companyLabel.setEditable_(False)
+        accessoryView.addSubview_(companyLabel)
+        
+        # Создаем NSPopUpButton для выбора компании
+        companyPopup = NSPopUpButton.alloc().initWithFrame_(NSMakeRect(85, 34, 155, 26))
+        companyPopup.setPullsDown_(False)
+        companyPopup.addItemWithTitle_(t('no_company'))
+        for company in companies:
+            companyPopup.addItemWithTitle_(f"{company['name']} ({company['code']})")
+        accessoryView.addSubview_(companyPopup)
         
         rateLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 6, 80, 20))
         rateLabel.setStringValue_(t('hourly_rate'))
@@ -1209,11 +1232,17 @@ class TimeTrackerWindowController(NSObject):
             except ValueError:
                 hourly_rate = 0
             
+            # Определяем выбранную компанию
+            company_id = None
+            selected_idx = companyPopup.indexOfSelectedItem()
+            if selected_idx > 0:  # 0 = "Без компании"
+                company_id = companies[selected_idx - 1]['id']
+            
             if name:
                 try:
-                    NSLog(f"Attempting to create project: {name}, rate: {hourly_rate}")
+                    NSLog(f"Attempting to create project: {name}, rate: {hourly_rate}, company_id: {company_id}")
                     NSLog(f"Database path: {self.db.db_path}")
-                    res = self.db.create_project(name, hourly_rate=hourly_rate)
+                    res = self.db.create_project(name, hourly_rate=hourly_rate, company_id=company_id)
                     NSLog(f"Project creation result: {res}")
                     if res:
                         self.reloadProjects()
@@ -1703,11 +1732,14 @@ class ProjectSettingsWindowController(NSObject):
             return None
         self.db = Database()
         self.projects = []
+        self.companies = []
         self.window = None
         self.tableView = None
         self.nameField = None
+        self.companyPopup = None
         self.rateField = None
         self.saveBtn = None
+        self.deleteBtn = None
         return self
     
     def showWindow(self):
@@ -1721,13 +1753,13 @@ class ProjectSettingsWindowController(NSObject):
         screen = NSScreen.mainScreen()
         screen_frame = screen.frame()
         width = 550
-        height = 450
+        height = 550
         x = (screen_frame.size.width - width) / 2
         y = (screen_frame.size.height - height) / 2
         
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(x, y, width, height),
-            NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask,
+            NSTitledWindowMask | NSClosableWindowMask,
             2,
             False
         )
@@ -1746,7 +1778,7 @@ class ProjectSettingsWindowController(NSObject):
         
         # Таблица проектов
         tabHeight = height - 70
-        tableY = 100
+        tableY = 140
         tableHeight = tabHeight - tableY - 20
         scrollView = NSScrollView.alloc().initWithFrame_(NSMakeRect(20, tableY, width-60, tableHeight))
         self.tableView = NSTableView.alloc().initWithFrame_(scrollView.bounds())
@@ -1768,8 +1800,8 @@ class ProjectSettingsWindowController(NSObject):
         scrollView.setHasVerticalScroller_(True)
         dataView.addSubview_(scrollView)
         
-        # Поля редактирования
-        labelY = 60
+        # Поля редактирования и создание нового проекта
+        labelY = 80
         label1 = NSTextField.alloc().initWithFrame_(NSMakeRect(20, labelY, 100, 20))
         label1.setStringValue_(t('project_name') + ":")
         label1.setBezeled_(False)
@@ -1781,27 +1813,39 @@ class ProjectSettingsWindowController(NSObject):
         self.nameField.setPlaceholderString_(t('project_name'))
         dataView.addSubview_(self.nameField)
         
-        label2 = NSTextField.alloc().initWithFrame_(NSMakeRect(20, labelY - 40, 100, 20))
-        label2.setStringValue_(t('hourly_rate') + ":")
+        # Поле компании
+        label2 = NSTextField.alloc().initWithFrame_(NSMakeRect(20, labelY - 35, 100, 20))
+        label2.setStringValue_(t('company') + ":")
         label2.setBezeled_(False)
         label2.setDrawsBackground_(False)
         label2.setEditable_(False)
         dataView.addSubview_(label2)
         
-        self.rateField = NSTextField.alloc().initWithFrame_(NSMakeRect(130, labelY - 40, 100, 28))
+        self.companyPopup = NSPopUpButton.alloc().initWithFrame_(NSMakeRect(130, labelY - 40, 200, 28))
+        self.companyPopup.setPullsDown_(False)
+        dataView.addSubview_(self.companyPopup)
+        
+        label3 = NSTextField.alloc().initWithFrame_(NSMakeRect(20, labelY - 70, 100, 20))
+        label3.setStringValue_(t('hourly_rate') + ":")
+        label3.setBezeled_(False)
+        label3.setDrawsBackground_(False)
+        label3.setEditable_(False)
+        dataView.addSubview_(label3)
+        
+        self.rateField = NSTextField.alloc().initWithFrame_(NSMakeRect(130, labelY - 70, 100, 28))
         self.rateField.setPlaceholderString_("0")
         dataView.addSubview_(self.rateField)
         
-        # Кнопка Новый проект
-        newProjectBtn = NSButton.alloc().initWithFrame_(NSMakeRect(240, labelY - 40, 120, 28))
-        newProjectBtn.setTitle_("+ " + t('new_project'))
-        newProjectBtn.setBezelStyle_(NSBezelStyleRounded)
-        newProjectBtn.setTarget_(self)
-        newProjectBtn.setAction_(objc.selector(self.createNewProject_, signature=b"v@:"))
-        dataView.addSubview_(newProjectBtn)
+        # Кнопка Видалити проект  
+        self.deleteBtn = NSButton.alloc().initWithFrame_(NSMakeRect(240, labelY - 70, 130, 28))
+        self.deleteBtn.setTitle_(t('delete_project'))
+        self.deleteBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.deleteBtn.setTarget_(self)
+        self.deleteBtn.setAction_(objc.selector(self.deleteProject_, signature=b"v@:@"))
+        dataView.addSubview_(self.deleteBtn)
         
-        # Кнопка Сохранить
-        self.saveBtn = NSButton.alloc().initWithFrame_(NSMakeRect(width-150, labelY - 40, 100, 28))
+        # Кнопка Зберегти (создает новый проект или обновляет существующий)
+        self.saveBtn = NSButton.alloc().initWithFrame_(NSMakeRect(370, labelY - 70, 135, 28))
         self.saveBtn.setTitle_(t('save'))
         self.saveBtn.setBezelStyle_(NSBezelStyleRounded)
         self.saveBtn.setTarget_(self)
@@ -1971,6 +2015,15 @@ class ProjectSettingsWindowController(NSObject):
     
     def reloadProjects(self):
         self.projects = self.db.get_all_projects()
+        self.companies = self.db.get_all_companies()
+        
+        # Обновляем popup с компаниями
+        if self.companyPopup:
+            self.companyPopup.removeAllItems()
+            self.companyPopup.addItemWithTitle_(t('no_company'))
+            for company in self.companies:
+                self.companyPopup.addItemWithTitle_(f"{company['name']} ({company['code']})")
+        
         if self.tableView:
             self.tableView.reloadData()
     
@@ -1996,6 +2049,18 @@ class ProjectSettingsWindowController(NSObject):
             project = self.projects[row]
             self.nameField.setStringValue_(project['name'])
             self.rateField.setStringValue_(str(project['hourly_rate']))
+            
+            # Устанавливаем выбранную компанию
+            if self.companyPopup:
+                company_id = project.get('company_id')
+                if company_id:
+                    # Ищем индекс компании в списке
+                    for i, company in enumerate(self.companies):
+                        if company['id'] == company_id:
+                            self.companyPopup.selectItemAtIndex_(i + 1)  # +1 для "Без компании"
+                            break
+                else:
+                    self.companyPopup.selectItemAtIndex_(0)  # "Без компании"
     
     def createBackup_(self, sender):
         """Создание бекапа базы данных"""
@@ -2354,28 +2419,80 @@ class ProjectSettingsWindowController(NSObject):
             alert.runModal()
     
     def saveProject_(self, sender):
-        """Сохраняем изменения выбранного проекта"""
+        """Сохраняем изменения выбранного проекта или создаем новый"""
         row = self.tableView.selectedRow()
-        if row < 0 or row >= len(self.projects):
-            return
-        
-        project = self.projects[row]
         new_name = self.nameField.stringValue().strip()
         try:
             new_rate = float(self.rateField.stringValue())
         except ValueError:
             new_rate = 0
         
+        # Определяем выбранную компанию
+        company_id = None
+        if self.companyPopup:
+            selected_idx = self.companyPopup.indexOfSelectedItem()
+            if selected_idx > 0:  # 0 = "Без компании"
+                company_id = self.companies[selected_idx - 1]['id']
+        
         if not new_name:
             alert = NSAlert.alloc().init()
-            alert.setMessageText_(t('please_select_project'))
+            alert.setMessageText_(t('error'))
+            alert.setInformativeText_("Введіть назву проекту")
             alert.addButtonWithTitle_(t('ok'))
             alert.runModal()
             return
         
+        # Если проект не выбран - создаем новый
+        if row < 0 or row >= len(self.projects):
+            NSLog(f"Creating new project: {new_name}, rate: {new_rate}, company_id: {company_id}")
+            try:
+                project_id = self.db.create_project(new_name, hourly_rate=new_rate, company_id=company_id)
+                if project_id:
+                    NSLog(f"Project '{new_name}' created successfully with ID: {project_id}")
+                    
+                    # Оновлюємо таблицю
+                    self.reloadProjects()
+                    self.tableView.reloadData()
+                    
+                    # Очищаємо поля
+                    self.nameField.setStringValue_("")
+                    self.rateField.setStringValue_("0")
+                    if self.companyPopup:
+                        self.companyPopup.selectItemAtIndex_(0)
+                    
+                    # Оновлюємо основне вікно
+                    try:
+                        app = NSApp.delegate()
+                        if app and hasattr(app, 'controller') and app.controller is not None:
+                            app.controller.reloadProjects()
+                            try:
+                                app.updateStatusItem()
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        NSLog(f"Error updating main window: {e}")
+                else:
+                    alert = NSAlert.alloc().init()
+                    alert.setMessageText_(t('error'))
+                    alert.setInformativeText_(f"Проект з назвою '{new_name}' вже існує")
+                    alert.addButtonWithTitle_(t('ok'))
+                    alert.runModal()
+            except Exception as e:
+                NSLog(f"Error creating project: {e}")
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_(t('error'))
+                alert.setInformativeText_(f"Помилка при створенні проекту: {str(e)}")
+                alert.addButtonWithTitle_(t('ok'))
+                alert.runModal()
+            return
+        
+        # Если проект выбран - обновляем существующий
+        project = self.projects[row]
+        NSLog(f"Updating project {project['id']}: {new_name}, ${new_rate}/ч, company_id={company_id}")
+        
         # Обновляем в БД
-        if self.db.update_project(project['id'], new_name, new_rate):
-            NSLog(f"Проект {project['id']} обновлён: {new_name}, ${new_rate}/ч")
+        if self.db.update_project(project['id'], new_name, new_rate, company_id):
+            NSLog(f"Проект {project['id']} обновлён")
             self.reloadProjects()
             self.tableView.reloadData()
             # Обновим основное окно и статус-бар
@@ -2399,7 +2516,7 @@ class ProjectSettingsWindowController(NSObject):
                 pass
         else:
             alert = NSAlert.alloc().init()
-            alert.setMessageText_(t('create'))
+            alert.setMessageText_(t('error'))
             alert.setInformativeText_("Не удалось обновить проект")
             alert.addButtonWithTitle_(t('ok'))
             alert.runModal()
@@ -2412,6 +2529,8 @@ class ProjectSettingsWindowController(NSObject):
         # Очищаємо поля
         self.nameField.setStringValue_("")
         self.rateField.setStringValue_("0")
+        if self.companyPopup:
+            self.companyPopup.selectItemAtIndex_(0)  # "Без компанії"
         
         # Знімаємо виділення в таблиці
         self.tableView.deselectAll_(None)
@@ -2432,6 +2551,13 @@ class ProjectSettingsWindowController(NSObject):
         except ValueError:
             new_rate = 0
         
+        # Определяем выбранную компанию
+        company_id = None
+        if self.companyPopup:
+            selected_idx = self.companyPopup.indexOfSelectedItem()
+            if selected_idx > 0:  # 0 = "Без компании"
+                company_id = self.companies[selected_idx - 1]['id']
+        
         if not new_name:
             alert = NSAlert.alloc().init()
             alert.setMessageText_(t('error'))
@@ -2441,11 +2567,11 @@ class ProjectSettingsWindowController(NSObject):
             return
         
         # Створюємо проект в БД
-        NSLog(f"Attempting to create project: {new_name}, rate: {new_rate}")
+        NSLog(f"Attempting to create project: {new_name}, rate: {new_rate}, company_id: {company_id}")
         NSLog(f"Database path: {self.db.db_path}")
         
         try:
-            project_id = self.db.create_project(new_name, hourly_rate=new_rate)
+            project_id = self.db.create_project(new_name, hourly_rate=new_rate, company_id=company_id)
             NSLog(f"Project creation result: {project_id}")
             
             if project_id:
@@ -2458,6 +2584,8 @@ class ProjectSettingsWindowController(NSObject):
                 # Очищаємо поля
                 self.nameField.setStringValue_("")
                 self.rateField.setStringValue_("0")
+                if self.companyPopup:
+                    self.companyPopup.selectItemAtIndex_(0)  # "Без компанії"
                 
                 # Повертаємо кнопку до режиму "Зберегти"
                 self.saveBtn.setTitle_(t('save'))
@@ -2486,6 +2614,93 @@ class ProjectSettingsWindowController(NSObject):
             alert.setInformativeText_(f"Помилка при створенні проекту: {str(e)}")
             alert.addButtonWithTitle_(t('ok'))
             alert.runModal()
+    
+    def deleteProject_(self, sender):
+        """Удаление выбранного проекта"""
+        try:
+            row = self.tableView.selectedRow()
+            NSLog(f"deleteProject_ called, selected row: {row}")
+            if row < 0 or row >= len(self.projects):
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_(t('error'))
+                alert.setInformativeText_("Выберите проект для удаления")
+                alert.addButtonWithTitle_(t('ok'))
+                alert.runModal()
+                return
+            
+            project = self.projects[row]
+            NSLog(f"Attempting to delete project: {project['id']} - {project['name']}")
+            
+            # Проверяем, есть ли сессии у проекта
+            has_sessions = self.db.has_sessions_for_project(project['id'])
+            
+            # Показываем подтверждение с учетом наличия сессий
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('delete_project'))
+            if has_sessions:
+                alert.setInformativeText_(f"{t('confirm_delete_project')}\n\n⚠️ У цього проекту є записи часу. Вони також будуть видалені!")
+            else:
+                alert.setInformativeText_(t('confirm_delete_project'))
+            alert.addButtonWithTitle_(t('delete'))
+            alert.addButtonWithTitle_(t('cancel'))
+            alert.setAlertStyle_(NSAlertStyleWarning)
+            
+            response = alert.runModal()
+            NSLog(f"User response: {response}")
+            if response != 1000:  # 1000 = первая кнопка (Delete/Удалить)
+                NSLog("User cancelled deletion")
+                return
+            
+            # Удаляем проект (с сессиями если они есть)
+            NSLog(f"Calling db.delete_project({project['id']}, force={has_sessions})")
+            result = self.db.delete_project(project['id'], force=has_sessions)
+            NSLog(f"delete_project returned: {result}")
+            
+            if result:
+                NSLog(f"Проект {project['id']} удалён")
+                self.reloadProjects()
+                self.tableView.reloadData()
+                
+                # Очищаем поля
+                self.nameField.setStringValue_("")
+                self.rateField.setStringValue_("0")
+                if self.companyPopup:
+                    self.companyPopup.selectItemAtIndex_(0)
+                
+                # Обновляем основное окно
+                try:
+                    app = NSApp.delegate()
+                    if app and hasattr(app, 'controller') and app.controller is not None:
+                        # Если удалили текущий выбранный проект — переключимся на "Все проекты"
+                        try:
+                            if getattr(app.controller, 'selected_project_id', None) == project['id']:
+                                app.controller.selected_project_id = -1
+                                app.controller.reloadProjects()
+                                app.controller.reloadSessions()
+                            else:
+                                app.controller.reloadProjects()
+                        except Exception:
+                            pass
+                        try:
+                            app.updateStatusItem()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            else:
+                # Не удалось удалить
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_(t('error'))
+                alert.setInformativeText_(t('cannot_delete_project'))
+                alert.addButtonWithTitle_(t('ok'))
+                alert.setAlertStyle_(NSAlertStyleCritical)
+                alert.runModal()
+        except Exception as e:
+            NSLog(f"ERROR in deleteProject_: {e}")
+            import traceback
+            NSLog(f"Traceback: {traceback.format_exc()}")
+            print(f"ERROR in deleteProject_: {e}")
+            traceback.print_exc()
 
 
 class CompaniesWindowController(NSObject):
@@ -3400,7 +3615,7 @@ class AppDelegate(NSObject):
             appMenu.addItem_(NSMenuItem.separatorItem())
 
             settingsItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                t('settings'), objc.selector(self.openSettings_, signature=b"v@:@"), ","
+                t('settings'), objc.selector(self.openSettings_, signature=b"v@:"), ","
             )
             settingsItem.setKeyEquivalentModifierMask_(COMMAND_MASK)
             settingsItem.setTarget_(self)
@@ -3408,7 +3623,7 @@ class AppDelegate(NSObject):
             
             # Пункт меню Статистика
             statisticsItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                t('statistics'), objc.selector(self.openStatistics_, signature=b"v@:@"), "s"
+                t('statistics'), objc.selector(self.openStatistics_, signature=b"v@:"), "s"
             )
             statisticsItem.setKeyEquivalentModifierMask_(COMMAND_MASK | SHIFT_MASK)
             statisticsItem.setTarget_(self)
@@ -3695,7 +3910,7 @@ class AppDelegate(NSObject):
             self.recentTaskItems = []
             for i in range(3):
                 item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                    f"Задача {i+1}", objc.selector(self.switchToTask_, signature=b"v@:@"), ""
+                    f"Задача {i+1}", objc.selector(self.switchToTask_, signature=b"v@:"), ""
                 )
                 item.setTag_(i)
                 self.statusMenu.addItem_(item)
