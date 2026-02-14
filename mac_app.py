@@ -1332,6 +1332,12 @@ class TimeTrackerWindowController(NSObject):
             self.startStopBtn.setTitle_("■")
             self._updateStartStopAppearance()
             
+            NSLog("")
+            NSLog("*** ЗАПУСКАЕТСЯ ТАЙМЕР РАБОТЫ ***")
+            NSLog(f"DEBUG: Проект: {project_name if 'project_name' in locals() else 'N/A'}")
+            NSLog(f"DEBUG: Начало работы: {self.start_time}")
+            NSLog("*** ЗАПУСКАЕМ ТАЙМЕР НАПОМИНАНИЙ ***")
+            
             # Запускаем таймер для часовых напоминаний (каждый час)
             self._startHourlyReminder()
             
@@ -1472,14 +1478,18 @@ class TimeTrackerWindowController(NSObject):
         # Получаем интервал из настроек (в минутах), по умолчанию 60 минут
         defaults = NSUserDefaults.standardUserDefaults()
         interval_minutes = defaults.integerForKey_("reminderInterval")
+        NSLog(f"DEBUG: Значение из NSUserDefaults reminderInterval = {interval_minutes}")
+        NSLog(f"DEBUG: DEV_MODE = {DEV_MODE}")
+        
         if interval_minutes <= 0:
             # В DEV режиме - 1 минута для тестирования, в продакшене - 60 минут
             interval_minutes = 1 if DEV_MODE else 60
+            NSLog(f"DEBUG: interval_minutes был <= 0, установлено значение по умолчанию: {interval_minutes}")
         
         interval_seconds = interval_minutes * 60.0
         
         # Запускаем новый таймер
-        NSLog(f"=== ЗАПУСК ТАЙМЕРА НАПОМИНАНИЙ (интервал: {interval_minutes} мин) ===")
+        NSLog(f"=== ЗАПУСК ТАЙМЕРА НАПОМИНАНИЙ (интервал: {interval_minutes} мин = {interval_seconds} сек) ===")
         self.hourly_reminder_ref = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             interval_seconds,
             self,
@@ -1499,73 +1509,86 @@ class TimeTrackerWindowController(NSObject):
     
     def showHourlyReminder_(self, timer):
         """Показывает напоминание о текущей активности"""
-        NSLog("=== ВЫЗВАН showHourlyReminder_ ===")
-        NSLog(f"Timer running: {self.timer_running}")
+        NSLog("")
+        NSLog("########################################")
+        NSLog("### ВЫЗВАН showHourlyReminder_ !!! ###")
+        NSLog("########################################")
         
-        if not self.timer_running:
-            # Если таймер уже остановлен, не показываем напоминание
-            NSLog("Таймер не запущен, пропускаем напоминание")
-            return
-        
-        NSLog("Показываем напоминание пользователю")
-        
-        # СНАЧАЛА ОСТАНАВЛИВАЕМ ТАЙМЕР перед показом сообщения
-        NSLog("Останавливаем таймер перед показом сообщения...")
-        paused_session_id = self.current_session_id
-        paused_start_time = self.start_time
-        
-        # Временно останавливаем только визуальный таймер, но не сессию
-        if self.timer_ref is not None:
-            self.timer_ref.invalidate()
-            self.timer_ref = None
-        
-        # Получаем информацию о текущей задаче
         try:
+            NSLog(f"DEBUG: Timer running: {self.timer_running}")
+            NSLog(f"DEBUG: Current time: {datetime.now()}")
+            
+            if not self.timer_running:
+                # Если таймер уже остановлен, не показываем напоминание
+                NSLog("ВНИМАНИЕ: Таймер не запущен, пропускаем напоминание")
+                return
+            
+            NSLog("DEBUG: Прошли проверку timer_running")
+            NSLog("ПОКАЗЫВАЕМ НАПОМИНАНИЕ ПОЛЬЗОВАТЕЛЮ!!!")
+            
+            # СНАЧАЛА ОСТАНАВЛИВАЕМ ТАЙМЕР перед показом сообщения
+            NSLog("Останавливаем таймер перед показом сообщения...")
+            paused_session_id = self.current_session_id
+            paused_start_time = self.start_time
+            
+            NSLog(f"DEBUG: paused_session_id = {paused_session_id}")
+            NSLog(f"DEBUG: paused_start_time = {paused_start_time}")
+            
+            # Временно останавливаем только визуальный таймер, но не сессию
+            if self.update_timer_ref is not None:
+                NSLog("DEBUG: Останавливаем update_timer_ref")
+                self.update_timer_ref.invalidate()
+                self.update_timer_ref = None
+            
+            NSLog("DEBUG: Получаем информацию о текущей задаче...")
+            
+            # Получаем информацию о текущей задаче
             idx = self.projectPopup.indexOfSelectedItem()
             project_name = "Без названия"
             if idx > 0 and idx-1 < len(self.projects_cache):
                 project_name = self.projects_cache[idx-1]['name']
             task_description = self.descriptionField.stringValue().strip()
-        except Exception as e:
-            NSLog(f"Error getting task info for reminder: {e}")
-            project_name = "Без названия"
-            task_description = ""
-        
-        # Вычисляем время работы
-        elapsed_seconds = 0
-        if paused_start_time:
-            elapsed_seconds = int((datetime.now() - paused_start_time).total_seconds())
-        elapsed_str = self.formatDuration(elapsed_seconds)
-        
-        # Формируем текст сообщения
-        message = f"Проект: {project_name}"
-        if task_description:
-            message += f"\nЗадача: {task_description}"
-        message += f"\n\nВремя работы: {elapsed_str}"
-        message += f"\n\nТаймер остановлен. Продолжить работу?"
-        
-        # Создаем alert
-        alert = NSAlert.alloc().init()
-        alert.setMessageText_(t('still_working_question'))
-        alert.setInformativeText_(message)
-        alert.addButtonWithTitle_(t('yes'))  # Продолжить
-        alert.addButtonWithTitle_(t('no'))   # Завершить
-        alert.setAlertStyle_(1)  # NSInformationalAlertStyle
-        
-        # Показываем alert и обрабатываем ответ
-        NSLog("Показываем alert...")
-        response = alert.runModal()
-        NSLog(f"Получен ответ: {response}")
-        
-        # NSAlertFirstButtonReturn = 1000 (Да - продолжить)
-        # NSAlertSecondButtonReturn = 1001 (Нет - завершить)
-        if response == 1001:  # Нажата кнопка "Нет" - ЗАВЕРШИТЬ ЗАДАЧУ
-            NSLog("!!! ПОЛЬЗОВАТЕЛЬ НАЖАЛ 'НЕТ' - ЗАВЕРШАЕМ ЗАДАЧУ !!!")
             
-            try:
+            NSLog(f"DEBUG: Проект: {project_name}, Описание: {task_description}")
+            
+            # Вычисляем время работы
+            elapsed_seconds = 0
+            if paused_start_time:
+                elapsed_seconds = int((datetime.now() - paused_start_time).total_seconds())
+            elapsed_str = self.formatDuration(elapsed_seconds)
+            
+            NSLog(f"DEBUG: Время работы: {elapsed_str}")
+            
+            # Формируем текст сообщения
+            message = f"Проект: {project_name}"
+            if task_description:
+                message += f"\nЗадача: {task_description}"
+            message += f"\n\nВремя работы: {elapsed_str}"
+            message += f"\n\nТаймер остановлен. Продолжить работу?"
+            
+            NSLog("DEBUG: Создаем NSAlert...")
+            
+            # Создаем alert
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t('still_working_question'))
+            alert.setInformativeText_(message)
+            alert.addButtonWithTitle_(t('yes'))  # Продолжить
+            alert.addButtonWithTitle_(t('no'))   # Завершить
+            alert.setAlertStyle_(1)  # NSInformationalAlertStyle
+            
+            # Показываем alert и обрабатываем ответ
+            NSLog("DEBUG: Показываем alert...")
+            response = alert.runModal()
+            NSLog(f"DEBUG: Получен ответ: {response}")
+            
+            # NSAlertFirstButtonReturn = 1000 (Да - продолжить)
+            # NSAlertSecondButtonReturn = 1001 (Нет - завершить)
+            if response == 1001:  # Нажата кнопка "Нет" - ЗАВЕРШИТЬ ЗАДАЧУ
+                NSLog("DEBUG: ПОЛЬЗОВАТЕЛЬ НАЖАЛ 'НЕТ' - ЗАВЕРШАЕМ ЗАДАЧУ")
+                
                 # Полностью останавливаем таймер и закрываем сессию
                 if paused_session_id and self.timer_running:
-                    NSLog(f"Завершаем сессию {paused_session_id}")
+                    NSLog(f"DEBUG: Завершаем сессию {paused_session_id}")
                     self.timer_running = False
                     self.db.stop_session(paused_session_id)
                     self.current_session_id = None
@@ -1585,26 +1608,27 @@ class TimeTrackerWindowController(NSObject):
                     except Exception:
                         pass
                     
-                    NSLog("Задача успешно завершена!")
-            except Exception as e:
-                NSLog(f"ОШИБКА при завершении задачи: {e}")
-                import traceback
-                traceback.print_exc()
-        else:  # Нажата кнопка "Да" - ПРОДОЛЖИТЬ РАБОТУ
-            NSLog("Пользователь ответил 'Да', продолжаем работу")
-            
-            # Возобновляем таймер
-            NSLog("Возобновляем таймер...")
-            if self.timer_running and paused_session_id:
-                # Перезапускаем визуальный таймер
-                self.timer_ref = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-                    1.0,
-                    self,
-                    objc.selector(self.tick_, signature=b"v@:@"),
-                    None,
-                    True
-                )
-                NSLog("Таймер успешно возобновлен!")
+                    NSLog("DEBUG: Задача успешно завершена!")
+            else:  # Нажата кнопка "Да" - ПРОДОЛЖИТЬ РАБОТУ
+                NSLog("DEBUG: Пользователь ответил 'Да', продолжаем работу")
+                
+                # Возобновляем таймер
+                NSLog("DEBUG: Возобновляем таймер...")
+                if self.timer_running and paused_session_id:
+                    # Перезапускаем визуальный таймер
+                    self.update_timer_ref = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                        1.0,
+                        self,
+                        objc.selector(self.tick_, signature=b"v@:@"),
+                        None,
+                        True
+                    )
+                    NSLog("DEBUG: Таймер успешно возобновлен!")
+                    
+        except Exception as e:
+            NSLog(f"КРИТИЧЕСКАЯ ОШИБКА в showHourlyReminder_: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _stopTimerFromReminder_(self, sender):
         """Безопасная остановка таймера из напоминания"""

@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime, timedelta
 import threading
+import json
+import os
 from database import Database
 
 class TimeTrackerApp:
@@ -18,6 +20,10 @@ class TimeTrackerApp:
         self.elapsed_seconds = 0
         self.auto_refresh_id = None
         self.first_run = True
+        self.last_activity_check = None
+        
+        # Загружаем настройки (включая интервал напоминаний)
+        self.load_settings()
         
         # Проверяем активную сессию при запуске
         self.check_active_session()
@@ -32,6 +38,41 @@ class TimeTrackerApp:
         # Запускаем автообновление
         self.auto_refresh_data()
     
+    def load_settings(self):
+        """Загружает настройки приложения из JSON файла"""
+        settings_file = 'settings.json'
+        default_settings = {
+            'reminder_interval': 60  # По умолчанию 60 минут
+        }
+        
+        try:
+            if os.path.exists(settings_file):
+                with open(settings_file, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                    self.reminder_interval = settings.get('reminder_interval', 60)
+                    print(f"✓ Настройки загружены: интервал напоминаний = {self.reminder_interval} минут")
+            else:
+                self.reminder_interval = 60
+                # Создаем файл настроек с значениями по умолчанию
+                self.save_settings()
+                print(f"✓ Создан файл настроек с интервалом по умолчанию: {self.reminder_interval} минут")
+        except Exception as e:
+            print(f"Ошибка загрузки настроек: {e}")
+            self.reminder_interval = 60
+    
+    def save_settings(self):
+        """Сохраняет настройки приложения в JSON файл"""
+        settings_file = 'settings.json'
+        settings = {
+            'reminder_interval': self.reminder_interval
+        }
+        
+        try:
+            with open(settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Ошибка сохранения настроек: {e}")
+    
     def check_active_session(self):
         """Проверяет есть ли активная сессия при запуске"""
         active = self.db.get_active_session()
@@ -42,6 +83,7 @@ class TimeTrackerApp:
             self.start_time = datetime.fromisoformat(start_time_str)
             elapsed = datetime.now() - self.start_time
             self.elapsed_seconds = int(elapsed.total_seconds())
+            self.last_activity_check = datetime.now()  # Инициализируем время последней проверки
     
     def create_widgets(self):
         # Верхняя панель с таймером
@@ -235,6 +277,7 @@ class TimeTrackerApp:
             self.start_time = datetime.now()
             self.elapsed_seconds = 0
             self.timer_running = True
+            self.last_activity_check = datetime.now()  # Сброс времени последней проверки
             self.start_stop_btn.config(text="STOP")
             self.update_timer()
         else:
@@ -249,6 +292,7 @@ class TimeTrackerApp:
                 self.description_entry.config(fg='#999')
                 self.refresh_sessions()
                 self.current_session_id = None
+                self.last_activity_check = None  # Сброс времени проверки при остановке
     
     def update_timer(self):
         """Обновляет отображение таймера"""
@@ -261,6 +305,10 @@ class TimeTrackerApp:
             seconds = self.elapsed_seconds % 60
             
             self.timer_label.config(text=f"{hours:02d}:{minutes:02d}:{seconds:02d}")
+            
+            # Проверяем активность каждую минуту
+            self.check_activity_reminder()
+            
             self.root.after(1000, self.update_timer)
     
     def format_duration(self, seconds):
@@ -290,6 +338,95 @@ class TimeTrackerApp:
         
         # Запускаем таймер
         self.toggle_timer()
+    
+    def check_activity_reminder(self):
+        """Проверяет, нужно ли показать напоминание о активности"""
+        if not self.timer_running or not self.start_time:
+            return
+        
+        # Если это первая проверка, инициализируем
+        if self.last_activity_check is None:
+            self.last_activity_check = datetime.now()
+            return
+        
+        # Проверяем, прошло ли достаточно времени с последней проверки
+        time_since_check = datetime.now() - self.last_activity_check
+        minutes_elapsed = time_since_check.total_seconds() / 60
+        
+        if minutes_elapsed >= self.reminder_interval:
+            # Обновляем время последней проверки
+            self.last_activity_check = datetime.now()
+            # Показываем диалог
+            self.show_activity_dialog()
+    
+    def show_activity_dialog(self):
+        """Показывает диалог с вопросом о продолжении работы"""
+        if not self.timer_running:
+            return
+        
+        # ОСТАНАВЛИВАЕМ ТАЙМЕР ПЕРЕД ПОКАЗОМ ДИАЛОГА
+        # Сохраняем информацию о текущей сессии
+        paused_session_id = self.current_session_id
+        paused_start_time = self.start_time
+        paused_was_running = self.timer_running
+        
+        # Временно останавливаем визуальный таймер (но не сессию в БД)
+        self.timer_running = False
+        
+        # Получаем информацию о текущей задаче
+        project_name = self.project_var.get()
+        if not project_name or project_name == "Без проекта":
+            project_name = "Без названия"
+        
+        description = self.description_entry.get()
+        if description == "Введите описание..." or not description:
+            description = ""
+        
+        # Вычисляем время работы на момент остановки
+        if paused_start_time:
+            elapsed_seconds = int((datetime.now() - paused_start_time).total_seconds())
+        else:
+            elapsed_seconds = self.elapsed_seconds
+        elapsed_str = self.format_duration(elapsed_seconds)
+        
+        # Формируем сообщение
+        message = f"Проект: {project_name}"
+        if description:
+            message += f"\nЗадача: {description}"
+        message += f"\n\nВремя работы: {elapsed_str}"
+        message += f"\n\nТаймер остановлен. Продолжить работу?"
+        
+        # Показываем диалог
+        response = messagebox.askyesno(
+            "Проверка активности",
+            message,
+            icon='question'
+        )
+        
+        if not response:  # Если нажали "Нет" - ЗАВЕРШИТЬ ЗАДАЧУ
+            # Полностью останавливаем сессию
+            if paused_session_id:
+                self.db.stop_session(paused_session_id)
+                self.timer_running = False
+                self.current_session_id = None
+                self.start_time = None
+                self.start_stop_btn.config(text="START")
+                self.timer_label.config(text="00:00:00")
+                # Очищаем описание
+                self.description_entry.delete(0, tk.END)
+                self.description_entry.insert(0, "Введите описание...")
+                self.description_entry.config(fg='#999')
+                self.refresh_sessions()
+                self.last_activity_check = None
+        else:  # Если нажали "Да" - ПРОДОЛЖИТЬ РАБОТУ
+            # Возобновляем таймер
+            if paused_session_id and paused_start_time:
+                self.timer_running = True
+                self.current_session_id = paused_session_id
+                self.start_time = paused_start_time
+                self.last_activity_check = datetime.now()
+                # Перезапускаем update_timer
+                self.update_timer()
     
     def refresh_sessions(self):
         """Обновляет список сессий"""
