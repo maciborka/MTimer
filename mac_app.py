@@ -190,7 +190,7 @@ class TimeTrackerWindowController(NSObject):
         
         try:
             from Cocoa import NSBox, NSBoxCustom
-            self.timerCard = NSBox.alloc().initWithFrame_(NSMakeRect(20, cardY, width-40, self.cardHeight))
+            self.timerCard = NSBox.alloc().initWithFrame_(NSMakeRect(5, cardY, width-10, self.cardHeight))
             self.timerCard.setBoxType_(NSBoxCustom)
             self.timerCard.setBorderType_(0)  # NoBorder
             self.timerCard.setTitlePosition_(0)  # NoTitle
@@ -199,7 +199,7 @@ class TimeTrackerWindowController(NSObject):
             self.timerCard.setContentViewMargins_((0, 0))
         except Exception as e:
             NSLog(f"Не удалось создать NSBox, используем NSView: {e}")
-            self.timerCard = NSView.alloc().initWithFrame_(NSMakeRect(20, cardY, width-40, self.cardHeight))
+            self.timerCard = NSView.alloc().initWithFrame_(NSMakeRect(5, cardY, width-10, self.cardHeight))
             self.timerCard.setWantsLayer_(True)
             self.timerCard.layer().setCornerRadius_(12.0)
         
@@ -387,19 +387,19 @@ class TimeTrackerWindowController(NSObject):
 
         # Замість таблиці - ScrollView з StackView для списку сесій
         tableTopMargin = 80
-        tableY = 20
-        tableHeight = cardY - 40 - tableTopMargin
+        tableY = 5
+        tableHeight = cardY - 20 - tableTopMargin
         if tableHeight < 100:
             tableHeight = 100
         
-        self.sessionsScroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(20, tableY, width-40, tableHeight))
+        self.sessionsScroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(5, tableY, width-10, tableHeight))
         self.sessionsScroll.setHasVerticalScroller_(True)
         self.sessionsScroll.setAutohidesScrollers_(True)
         self.sessionsScroll.setDrawsBackground_(True)
         self.sessionsScroll.setBackgroundColor_(NSColor.controlBackgroundColor())
         
         # Контейнер для списка сессий (FlippedView: начало координат сверху)
-        self.sessionsStack = FlippedView.alloc().initWithFrame_(NSMakeRect(0, 0, width-40, 100))
+        self.sessionsStack = FlippedView.alloc().initWithFrame_(NSMakeRect(0, 0, width-10, 100))
         # self.sessionsStack.setOrientation_(1)  # 1 = vertical
         # self.sessionsStack.setAlignment_(3)  # 3 = leading/left
         # self.sessionsStack.setSpacing_(8)
@@ -473,7 +473,7 @@ class TimeTrackerWindowController(NSObject):
             
             # Обновляем timerCard
             cardY = height - self.topBarHeight - 20 - self.cardHeight
-            self.timerCard.setFrame_(NSMakeRect(20, cardY, width-40, self.cardHeight))
+            self.timerCard.setFrame_(NSMakeRect(5, cardY, width-10, self.cardHeight))
             
             # Обновляем элементы внутри карточки (адаптивная ширина)
             rowY = (self.cardHeight - 28) / 2
@@ -482,7 +482,7 @@ class TimeTrackerWindowController(NSObject):
             self.addProjectBtn.setFrame_(NSMakeRect(590, rowY, 35, 28))
             
             # Таймер и кнопка старт/стоп справа
-            cardWidth = width - 40
+            cardWidth = width - 10
             self.timerLabel.setFrame_(NSMakeRect(cardWidth - 180 - 56, rowY, 120, 28))
             btnSize = 44
             self.startStopBtn.setFrame_(NSMakeRect(cardWidth - btnSize - 16, (self.cardHeight - btnSize)/2, btnSize, btnSize))
@@ -509,15 +509,19 @@ class TimeTrackerWindowController(NSObject):
             self.weekTotalField.setFrame_(NSMakeRect(390, filterY, 300, 20))
             self.todayTotalField.setFrame_(NSMakeRect(width-200, filterY + 2, 160, 20))
             self.continueBtn.setFrame_(NSMakeRect(width-360, filterY, 140, 24))
-            self.statisticsBtn.setFrame_(NSMakeRect(20, filterY - 30, 120, 24))
+            if hasattr(self, 'statisticsBtn'):
+                self.statisticsBtn.setFrame_(NSMakeRect(20, filterY - 30, 120, 24))
             
             # ScrollView с сессиями - растягивается по высоте и ширине
             tableTopMargin = 80  # Увеличили отступ для кнопки статистики
-            tableY = 20
-            tableHeight = cardY - 40 - tableTopMargin
+            tableY = 5
+            tableHeight = cardY - 20 - tableTopMargin
             if tableHeight < 100:
                 tableHeight = 100
-            self.sessionsScroll.setFrame_(NSMakeRect(20, tableY, width-40, tableHeight))
+            self.sessionsScroll.setFrame_(NSMakeRect(5, tableY, width-10, tableHeight))
+            
+            # Обновляем ширину элементов сессий
+            self.updateSessionsList()
             
             # Таблицы больше нет, используем StackView
             # col1 = self.tableView.tableColumnWithIdentifier_("desc")
@@ -1703,7 +1707,8 @@ class TimeTrackerWindowController(NSObject):
     def resetStatisticsButton_(self, _):
         """Сбрасывает highlight кнопки статистики"""
         try:
-            self.statisticsBtn.highlight_(False)
+            if hasattr(self, 'statisticsBtn'):
+                self.statisticsBtn.highlight_(False)
         except Exception:
             pass
 
@@ -3284,12 +3289,12 @@ class AllTasksWindowController(NSObject):
         filterY = height - 60
         
         # Label "Фільтр:"
-        filterLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, filterY, 60, 20))
-        filterLabel.setStringValue_(t('period'))
-        filterLabel.setBezeled_(False)
-        filterLabel.setDrawsBackground_(False)
-        filterLabel.setEditable_(False)
-        content.addSubview_(filterLabel)
+        self.filterLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, filterY, 60, 20))
+        self.filterLabel.setStringValue_(t('period'))
+        self.filterLabel.setBezeled_(False)
+        self.filterLabel.setDrawsBackground_(False)
+        self.filterLabel.setEditable_(False)
+        content.addSubview_(self.filterLabel)
         
         # Popup для вибору періоду
         self.filterPopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(90, filterY, 150, 28), False)
@@ -3302,12 +3307,12 @@ class AllTasksWindowController(NSObject):
         content.addSubview_(self.filterPopup)
         
         # Label "Проект:"
-        projectLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(270, filterY, 60, 20))
-        projectLabel.setStringValue_(t('project') + ':')
-        projectLabel.setBezeled_(False)
-        projectLabel.setDrawsBackground_(False)
-        projectLabel.setEditable_(False)
-        content.addSubview_(projectLabel)
+        self.projectLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(270, filterY, 60, 20))
+        self.projectLabel.setStringValue_(t('project') + ':')
+        self.projectLabel.setBezeled_(False)
+        self.projectLabel.setDrawsBackground_(False)
+        self.projectLabel.setEditable_(False)
+        content.addSubview_(self.projectLabel)
         
         # Popup для вибору проекту
         self.projectPopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(340, filterY, 250, 28), False)
@@ -3522,7 +3527,42 @@ class AllTasksWindowController(NSObject):
             cell.setDrawsBackground_(True)
     
     def windowDidResize_(self, notification):
-        """Обробка зміни розміру вікна - оновлюємо ширину колонок"""
+        """Обробка зміни розміру вікна - оновлюємо позиції та ширину елементів"""
+        if not hasattr(self, 'window') or self.window is None:
+            return
+            
+        # Отримуємо новий розмір вікна
+        contentFrame = self.window.contentView().frame()
+        width = contentFrame.size.width
+        height = contentFrame.size.height
+        
+        # Пересчитуємо позиції верхніх елементів (вони мають бути зверху)
+        filterY = height - 60
+        
+        if hasattr(self, 'filterLabel'):
+            self.filterLabel.setFrame_(NSMakeRect(20, filterY, 60, 20))
+        
+        if hasattr(self, 'filterPopup'):
+            self.filterPopup.setFrame_(NSMakeRect(90, filterY, 150, 28))
+        
+        if hasattr(self, 'projectLabel'):
+            self.projectLabel.setFrame_(NSMakeRect(270, filterY, 60, 20))
+        
+        if hasattr(self, 'projectPopup'):
+            self.projectPopup.setFrame_(NSMakeRect(340, filterY, 250, 28))
+        
+        if hasattr(self, 'statsLabel'):
+            # statsLabel має autoresizingMask, але оновимо його y-координату
+            labelWidth = 280
+            self.statsLabel.setFrame_(NSMakeRect(width - labelWidth - 20, filterY, labelWidth, 20))
+        
+        # Оновлюємо розмір та позицію scrollView
+        if hasattr(self, 'scrollView'):
+            tableY = 20
+            tableHeight = height - 100
+            self.scrollView.setFrame_(NSMakeRect(20, tableY, width-40, tableHeight))
+        
+        # Оновлюємо ширину колонок таблиці
         if hasattr(self, 'tableView') and hasattr(self, 'scrollView'):
             # Отримуємо нову ширину scrollView
             frame = self.scrollView.frame()

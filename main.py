@@ -173,7 +173,7 @@ class TimeTrackerApp:
         
         # Средняя панель - статистика недели
         stats_frame = tk.Frame(self.root, bg='#f5f5f5', height=60)
-        stats_frame.pack(fill=tk.X, padx=20, pady=10)
+        stats_frame.pack(fill=tk.X, padx=5, pady=5)
         stats_frame.pack_propagate(False)
         
         week_label = tk.Label(stats_frame, text="THIS WEEK TOTAL", 
@@ -187,7 +187,7 @@ class TimeTrackerApp:
         # Сегодняшняя статистика
         today_frame = tk.Frame(self.root, bg='white', relief=tk.FLAT, 
                              highlightthickness=1, highlightbackground='#ddd')
-        today_frame.pack(fill=tk.X, padx=20, pady=5)
+        today_frame.pack(fill=tk.X, padx=5, pady=3)
         
         today_header = tk.Frame(today_frame, bg='white')
         today_header.pack(fill=tk.X, padx=10, pady=5)
@@ -201,7 +201,7 @@ class TimeTrackerApp:
         
         # Список сессий
         sessions_container = tk.Frame(self.root, bg='white')
-        sessions_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 10))
+        sessions_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
         
         # Скроллбар
         scrollbar = tk.Scrollbar(sessions_container)
@@ -221,9 +221,14 @@ class TimeTrackerApp:
                                 lambda e: self.sessions_canvas.configure(
                                     scrollregion=self.sessions_canvas.bbox('all')))
         
+        # Привязка: растягиваем внутренний фрейм по ширине canvas
+        self.sessions_canvas.bind('<Configure>',
+                                  lambda e: self.sessions_canvas.itemconfig(
+                                      self.canvas_frame, width=e.width))
+        
         # Нижняя панель - управление проектами
         bottom_frame = tk.Frame(self.root, bg='#f5f5f5', height=40)
-        bottom_frame.pack(fill=tk.X, padx=20, pady=(0, 10))
+        bottom_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
         
         new_project_btn = ttk.Button(bottom_frame, text="+ Новый проект", 
                                      style='ActionLarge.TButton',
