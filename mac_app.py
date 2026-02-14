@@ -1566,13 +1566,23 @@ class TimeTrackerWindowController(NSObject):
             # Воспроизводим звуковое уведомление
             NSLog("DEBUG: Воспроизводим звуковой сигнал...")
             try:
-                # Используем системный звук "Glass" (приятный звук уведомления)
-                sound = NSSound.soundNamed_("Glass")
+                # Получаем сохраненный звук из настроек
+                defaults = NSUserDefaults.standardUserDefaults()
+                sound_name = defaults.stringForKey_("notificationSound")
+                
+                # Если звук не сохранен, используем "Glass" по умолчанию
+                if not sound_name:
+                    sound_name = "Glass"
+                
+                NSLog(f"DEBUG: Используем звук: {sound_name}")
+                
+                # Используем системный звук
+                sound = NSSound.soundNamed_(sound_name)
                 if sound:
                     sound.play()
-                    NSLog("DEBUG: Звук воспроизведен успешно")
+                    NSLog(f"DEBUG: Звук {sound_name} воспроизведен успешно")
                 else:
-                    NSLog("WARNING: Не удалось загрузить системный звук, используем NSBeep")
+                    NSLog(f"WARNING: Не удалось загрузить системный звук {sound_name}, используем NSBeep")
                     # Если системный звук не доступен, используем простой beep
                     from AppKit import NSBeep
                     NSBeep()
@@ -1985,13 +1995,71 @@ class ProjectSettingsWindowController(NSObject):
         reminderDescLabel.setTextColor_(NSColor.secondaryLabelColor())
         utilsView.addSubview_(reminderDescLabel)
         
+        # Настройка звука уведомления
+        soundLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 230, 180, 20))
+        soundLabel.setStringValue_(t('notification_sound'))
+        soundLabel.setBezeled_(False)
+        soundLabel.setDrawsBackground_(False)
+        soundLabel.setEditable_(False)
+        utilsView.addSubview_(soundLabel)
+        
+        # Popup для выбора звука
+        self.notificationSoundPopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(210, tabHeight - 235, 200, 28), False)
+        
+        # Список системных звуков macOS
+        system_sounds = [
+            ("Glass", t('sound_glass')),
+            ("Ping", t('sound_ping')),
+            ("Pop", t('sound_pop')),
+            ("Purr", t('sound_purr')),
+            ("Sosumi", t('sound_sosumi')),
+            ("Submarine", t('sound_submarine')),
+            ("Blow", t('sound_blow')),
+            ("Bottle", t('sound_bottle')),
+            ("Frog", t('sound_frog')),
+            ("Funk", t('sound_funk')),
+            ("Hero", t('sound_hero')),
+            ("Morse", t('sound_morse')),
+            ("Tink", t('sound_tink')),
+            ("Basso", t('sound_basso'))
+        ]
+        
+        # Добавляем звуки в popup
+        for sound_name, sound_label in system_sounds:
+            self.notificationSoundPopup.addItemWithTitle_(sound_label)
+        
+        # Загружаем сохраненный звук
+        savedSound = defaults.stringForKey_("notificationSound")
+        if savedSound:
+            # Находим индекс сохраненного звука
+            for idx, (sound_name, _) in enumerate(system_sounds):
+                if sound_name == savedSound:
+                    self.notificationSoundPopup.selectItemAtIndex_(idx)
+                    break
+        else:
+            # По умолчанию "Glass" (индекс 0)
+            self.notificationSoundPopup.selectItemAtIndex_(0)
+        
+        # Сохраняем список звуков для последующего использования
+        self.system_sounds = system_sounds
+        
+        utilsView.addSubview_(self.notificationSoundPopup)
+        
+        # Кнопка для прослушивания звука
+        previewSoundBtn = NSButton.alloc().initWithFrame_(NSMakeRect(415, tabHeight - 235, 105, 28))
+        previewSoundBtn.setTitle_(t('preview_sound'))
+        previewSoundBtn.setBezelStyle_(NSBezelStyleRounded)
+        previewSoundBtn.setTarget_(self)
+        previewSoundBtn.setAction_(objc.selector(self.previewSound_, signature=b"v@:@"))
+        utilsView.addSubview_(previewSoundBtn)
+        
         # Разделитель перед настройками языка
-        separator2 = NSBox.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 220, width-60, 1))
+        separator2 = NSBox.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 265, width-60, 1))
         separator2.setBoxType_(2)  # Separator
         utilsView.addSubview_(separator2)
         
         # Настройка языка интерфейса
-        languageLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 260, 180, 20))
+        languageLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 305, 180, 20))
         languageLabel.setStringValue_(t('interface_language'))
         languageLabel.setBezeled_(False)
         languageLabel.setDrawsBackground_(False)
@@ -1999,7 +2067,7 @@ class ProjectSettingsWindowController(NSObject):
         utilsView.addSubview_(languageLabel)
         
         # Popup для выбора языка
-        self.languagePopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(210, tabHeight - 265, 200, 28), False)
+        self.languagePopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(210, tabHeight - 310, 200, 28), False)
         self.languagePopup.addItemWithTitle_(t('language_english'))
         self.languagePopup.addItemWithTitle_(t('language_russian'))
         self.languagePopup.addItemWithTitle_(t('language_ukrainian'))
@@ -2020,7 +2088,7 @@ class ProjectSettingsWindowController(NSObject):
         utilsView.addSubview_(self.languagePopup)
         
         # Описание для выбора языка
-        languageDescLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 290, width-60, 20))
+        languageDescLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 335, width-60, 20))
         languageDescLabel.setStringValue_(t('language_description'))
         languageDescLabel.setBezeled_(False)
         languageDescLabel.setDrawsBackground_(False)
@@ -2029,12 +2097,12 @@ class ProjectSettingsWindowController(NSObject):
         utilsView.addSubview_(languageDescLabel)
         
         # Разделитель перед общей кнопкой сохранения
-        separator3 = NSBox.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 320, width-60, 1))
+        separator3 = NSBox.alloc().initWithFrame_(NSMakeRect(20, tabHeight - 365, width-60, 1))
         separator3.setBoxType_(2)  # Separator
         utilsView.addSubview_(separator3)
         
         # Общая кнопка сохранения всех настроек
-        saveAllBtn = NSButton.alloc().initWithFrame_(NSMakeRect((width - 180) / 2, tabHeight - 360, 180, 32))
+        saveAllBtn = NSButton.alloc().initWithFrame_(NSMakeRect((width - 180) / 2, tabHeight - 405, 180, 32))
         saveAllBtn.setTitle_(t('save'))
         saveAllBtn.setBezelStyle_(NSBezelStyleRounded)
         saveAllBtn.setTarget_(self)
@@ -2303,13 +2371,18 @@ class ProjectSettingsWindowController(NSObject):
             lang_codes = ['en', 'ru', 'uk', 'hu']
             lang_code = lang_codes[selected_index]
             
+            # 2.5. Получаем выбранный звук уведомления
+            sound_index = self.notificationSoundPopup.indexOfSelectedItem()
+            selected_sound = self.system_sounds[sound_index][0] if sound_index < len(self.system_sounds) else "Glass"
+            
             # 3. Сохраняем все настройки в NSUserDefaults
             defaults = NSUserDefaults.standardUserDefaults()
             defaults.setInteger_forKey_(interval, "reminderInterval")
             defaults.setObject_forKey_(lang_code, "interfaceLanguage")
+            defaults.setObject_forKey_(selected_sound, "notificationSound")
             defaults.synchronize()
             
-            NSLog(f"Сохранены настройки: интервал={interval} мин, язык={lang_code}")
+            NSLog(f"Сохранены настройки: интервал={interval} мин, язык={lang_code}, звук={selected_sound}")
             
             # 4. Показываем сообщение о сохранении и перезапуске
             alert = NSAlert.alloc().init()
@@ -2333,6 +2406,42 @@ class ProjectSettingsWindowController(NSObject):
             alert.setAlertStyle_(NSAlertStyleWarning)
             alert.addButtonWithTitle_("OK")
             alert.runModal()
+    
+    def previewSound_(self, sender):
+        """Воспроизводит выбранный звук для прослушивания"""
+        try:
+            # Получаем индекс выбранного звука
+            sound_index = self.notificationSoundPopup.indexOfSelectedItem()
+            
+            # Получаем имя звука
+            if sound_index < len(self.system_sounds):
+                sound_name = self.system_sounds[sound_index][0]
+                
+                NSLog(f"Воспроизведение звука: {sound_name}")
+                
+                # Воспроизводим звук
+                sound = NSSound.soundNamed_(sound_name)
+                if sound:
+                    sound.play()
+                    NSLog(f"Звук {sound_name} воспроизведен успешно")
+                else:
+                    NSLog(f"WARNING: Не удалось загрузить звук {sound_name}, используем NSBeep")
+                    from AppKit import NSBeep
+                    NSBeep()
+            else:
+                NSLog("ERROR: Некорректный индекс звука")
+                from AppKit import NSBeep
+                NSBeep()
+                
+        except Exception as e:
+            NSLog(f"Ошибка воспроизведения звука: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                from AppKit import NSBeep
+                NSBeep()
+            except:
+                pass
     
     def restartApplication(self):
         """Перезапуск приложения"""
