@@ -10,7 +10,7 @@ from Cocoa import (
     NSAlert, NSAlertStyleWarning, NSAlertStyleInformational, NSView, NSColor, 
     NSMenu, NSMenuItem, NSImage, NSNotificationCenter, NSStatusBar, 
     NSVariableStatusItemLength, NSSavePanel, NSModalResponseOK, NSTabView,
-    NSTabViewItem, NSStackView, NSBox, NSDatePicker
+    NSTabViewItem, NSStackView, NSBox, NSDatePicker, NSSound
 )
 from Foundation import NSLog, NSDateFormatter, NSDateComponentsFormatter, NSBundle, NSUserNotification, NSUserNotificationCenter, NSThread, NSString, NSUserDefaults
 import os
@@ -1562,6 +1562,27 @@ class TimeTrackerWindowController(NSObject):
             elapsed_str = self.formatDuration(elapsed_seconds)
             
             NSLog(f"DEBUG: Время работы: {elapsed_str}")
+            
+            # Воспроизводим звуковое уведомление
+            NSLog("DEBUG: Воспроизводим звуковой сигнал...")
+            try:
+                # Используем системный звук "Glass" (приятный звук уведомления)
+                sound = NSSound.soundNamed_("Glass")
+                if sound:
+                    sound.play()
+                    NSLog("DEBUG: Звук воспроизведен успешно")
+                else:
+                    NSLog("WARNING: Не удалось загрузить системный звук, используем NSBeep")
+                    # Если системный звук не доступен, используем простой beep
+                    from AppKit import NSBeep
+                    NSBeep()
+            except Exception as e:
+                NSLog(f"ERROR: Ошибка воспроизведения звука: {e}")
+                try:
+                    from AppKit import NSBeep
+                    NSBeep()
+                except:
+                    pass
             
             # Формируем текст сообщения
             message = f"Проект: {project_name}"
