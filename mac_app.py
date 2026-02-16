@@ -41,6 +41,7 @@ from Cocoa import (
     NSStackView,
     NSBox,
     NSDatePicker,
+    NSYearMonthDayDatePickerElementFlag,
     NSSound,
 )
 from Foundation import (
@@ -604,12 +605,12 @@ class TimeTrackerWindowController(NSObject):
         )
         content.addSubview_(self.monthFilterBtn)
 
-        # Поля выбора дат (по умолчанию скрыты) - размещаются НИЖЕ кнопки
-        customDateY = filterY - 60
+        # Поля выбора дат (по умолчанию скрыты) - размещаются НИЖЕ кнопок фильтров
+        customDateY = filterY - 30  # 30 пикселей ниже кнопок
 
         # Метка "С:"
         self.fromDateLabel = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(filterX, customDateY, 25, 20)
+            NSMakeRect(filterX, customDateY - 5, 25, 20)
         )
         self.fromDateLabel.setStringValue_(t("from_date"))
         self.fromDateLabel.setBezeled_(False)
@@ -622,22 +623,37 @@ class TimeTrackerWindowController(NSObject):
         from datetime import datetime, timedelta
 
         self.fromDatePicker = NSDatePicker.alloc().initWithFrame_(
-            NSMakeRect(filterX + 30, customDateY - 2, 140, 24)
+            NSMakeRect(filterX + 30, customDateY - 5, 140, 24)
         )
         self.fromDatePicker.setDatePickerStyle_(
             0
-        )  # NSDatePickerStyleTextFieldAndStepper
+        )  # NSDatePickerStyleTextFieldAndStepper - text field with calendar popup
         self.fromDatePicker.setDatePickerElements_(
-            224
-        )  # 0x00e0 = NSYearMonthDayDatePickerElementFlag
-        default_from_date = datetime.now() - timedelta(days=30)
-        self.fromDatePicker.setDateValue_(default_from_date)
+            NSYearMonthDayDatePickerElementFlag
+        )  # Only date (day/month/year), no time
+        self.fromDatePicker.setDatePickerMode_(0)  # NSSingleDateMode
+        self.fromDatePicker.setBezeled_(True)
+        self.fromDatePicker.setBordered_(True)
+
+        # Set date range: from January 1st of current year to today
+        current_year = datetime.now().year
+        min_date_py = datetime(current_year, 1, 1, 0, 0, 0)
+        max_date_py = datetime.now().replace(hour=23, minute=59, second=59)
+
+        # Convert Python datetime to NSDate using timestamp
+        min_date = NSDate.dateWithTimeIntervalSince1970_(min_date_py.timestamp())
+        max_date = NSDate.dateWithTimeIntervalSince1970_(max_date_py.timestamp())
+
+        self.fromDatePicker.setMinDate_(min_date)
+        self.fromDatePicker.setMaxDate_(max_date)
+        self.fromDatePicker.setDateValue_(min_date)
+
         self.fromDatePicker.setHidden_(True)
         content.addSubview_(self.fromDatePicker)
 
         # Метка "По:"
         self.toDateLabel = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(filterX + 180, customDateY, 25, 20)
+            NSMakeRect(filterX + 180, customDateY - 5, 25, 20)
         )
         self.toDateLabel.setStringValue_(t("to_date"))
         self.toDateLabel.setBezeled_(False)
@@ -648,19 +664,29 @@ class TimeTrackerWindowController(NSObject):
 
         # NSDatePicker для выбора даты "до"
         self.toDatePicker = NSDatePicker.alloc().initWithFrame_(
-            NSMakeRect(filterX + 210, customDateY - 2, 140, 24)
+            NSMakeRect(filterX + 210, customDateY - 5, 140, 24)
         )
-        self.toDatePicker.setDatePickerStyle_(0)  # NSDatePickerStyleTextFieldAndStepper
+        self.toDatePicker.setDatePickerStyle_(
+            0
+        )  # NSDatePickerStyleTextFieldAndStepper - text field with calendar popup
         self.toDatePicker.setDatePickerElements_(
-            224
-        )  # 0x00e0 = NSYearMonthDayDatePickerElementFlag
-        self.toDatePicker.setDateValue_(datetime.now())
+            NSYearMonthDayDatePickerElementFlag
+        )  # Only date (day/month/year), no time
+        self.toDatePicker.setDatePickerMode_(0)  # NSSingleDateMode
+        self.toDatePicker.setBezeled_(True)
+        self.toDatePicker.setBordered_(True)
+
+        # Set date range: from January 1st of current year to today
+        self.toDatePicker.setMinDate_(min_date)
+        self.toDatePicker.setMaxDate_(max_date)
+        self.toDatePicker.setDateValue_(max_date)
+
         self.toDatePicker.setHidden_(True)
         content.addSubview_(self.toDatePicker)
 
         # Кнопка "Применить"
         self.applyCustomFilterBtn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(filterX + 360, customDateY - 2, 80, 24)
+            NSMakeRect(filterX + 360, customDateY - 5, 80, 24)
         )
         self.applyCustomFilterBtn.setTitle_(t("apply"))
         self.applyCustomFilterBtn.setBezelStyle_(NSBezelStyleRounded)
@@ -897,17 +923,19 @@ class TimeTrackerWindowController(NSObject):
             self.monthFilterBtn.setFrame_(NSMakeRect(filterX + 285, filterY, 80, 24))
 
             # Элементы DatePicker для кастомного периода
-            customDateY = filterY - 60
-            self.fromDateLabel.setFrame_(NSMakeRect(filterX, customDateY, 25, 20))
+            customDateY = filterY - 30  # 30 пикселей ниже кнопок
+            self.fromDateLabel.setFrame_(NSMakeRect(filterX, customDateY - 5, 25, 20))
             self.fromDatePicker.setFrame_(
-                NSMakeRect(filterX + 30, customDateY - 2, 140, 24)
+                NSMakeRect(filterX + 30, customDateY - 5, 140, 24)
             )
-            self.toDateLabel.setFrame_(NSMakeRect(filterX + 180, customDateY, 25, 20))
+            self.toDateLabel.setFrame_(
+                NSMakeRect(filterX + 180, customDateY - 5, 25, 20)
+            )
             self.toDatePicker.setFrame_(
-                NSMakeRect(filterX + 210, customDateY - 2, 140, 24)
+                NSMakeRect(filterX + 210, customDateY - 5, 140, 24)
             )
             self.applyCustomFilterBtn.setFrame_(
-                NSMakeRect(filterX + 360, customDateY - 2, 80, 24)
+                NSMakeRect(filterX + 360, customDateY - 5, 80, 24)
             )
 
             # Поля с общим временем и кнопки
