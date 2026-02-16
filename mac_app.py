@@ -606,17 +606,6 @@ class TimeTrackerWindowController(NSObject):
         )
         content.addSubview_(self.monthFilterBtn)
 
-        # Кнопка экспорта в PDF - справа от фильтров
-        self.exportPdfBtn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(filterX + 380, filterY, 120, 24)
-        )
-        self.exportPdfBtn.setTitle_(t("export_pdf"))
-        self.exportPdfBtn.setBezelStyle_(NSBezelStyleRounded)
-        self.exportPdfBtn.setButtonType_(0)  # NSMomentaryLightButton - обычная кнопка
-        self.exportPdfBtn.setTarget_(self)
-        self.exportPdfBtn.setAction_(objc.selector(self.exportToPdf_, signature=b"v@:"))
-        content.addSubview_(self.exportPdfBtn)
-
         # Поля выбора дат (по умолчанию скрыты) - размещаются НИЖЕ кнопок фильтров
         customDateY = filterY - 30  # 30 пикселей ниже кнопок
 
@@ -740,6 +729,26 @@ class TimeTrackerWindowController(NSObject):
         )
         self.applyCustomFilterBtn.setHidden_(True)
         content.addSubview_(self.applyCustomFilterBtn)
+
+        # Кнопка экспорта в PDF - справа с иконкой принтера
+        self.exportPdfBtn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(width - 50, customDateY - 5, 40, 24)
+        )
+        self.exportPdfBtn.setTitle_("")
+        self.exportPdfBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.exportPdfBtn.setButtonType_(0)  # NSMomentaryLightButton - обычная кнопка
+        # Устанавливаем системную иконку принтера
+        try:
+            printer_image = NSImage.imageNamed_("NSPrintTemplate")
+            if printer_image:
+                self.exportPdfBtn.setImage_(printer_image)
+                self.exportPdfBtn.setImagePosition_(1)  # NSImageOnly
+        except Exception:
+            self.exportPdfBtn.setTitle_("PDF")  # Fallback если иконка не загрузится
+        self.exportPdfBtn.setTarget_(self)
+        self.exportPdfBtn.setAction_(objc.selector(self.exportToPdf_, signature=b"v@:"))
+        self.exportPdfBtn.setToolTip_(t("export_pdf"))
+        content.addSubview_(self.exportPdfBtn)
 
         # Поле общего времени
         self.weekTotalField = NSTextField.alloc().initWithFrame_(
@@ -981,6 +990,9 @@ class TimeTrackerWindowController(NSObject):
             self.applyCustomFilterBtn.setFrame_(
                 NSMakeRect(filterX + 440, customDateY - 5, 80, 24)
             )
+
+            # Кнопка экспорта в PDF - справа
+            self.exportPdfBtn.setFrame_(NSMakeRect(width - 50, customDateY - 5, 40, 24))
 
             # Поля с общим временем и кнопки
             self.weekTotalField.setFrame_(NSMakeRect(390, filterY, 300, 20))
@@ -1793,19 +1805,8 @@ class TimeTrackerWindowController(NSObject):
             NSLog(f"applyCustomFilter_ error: {e}")
 
     def exportToPdf_(self, sender):
-        """Экспорт отчета в PDF"""
+        """Экспорт отчета в PDF через диалог печати macOS"""
         try:
-            from datetime import datetime
-            from Foundation import (
-                NSGraphicsContext,
-                NSPDFGraphicsContext,
-                NSColor,
-                NSMutableDictionary,
-                NSString,
-                NSURL,
-            )
-            import os
-
             # Получаем текущие данные из отфильтрованных сессий
             if not self.today_sessions:
                 alert = NSAlert.alloc().init()
@@ -1843,33 +1844,9 @@ class TimeTrackerWindowController(NSObject):
                 if project:
                     project_name = project["name"]
 
-            # Диалог сохранения файла
-            save_panel = NSSavePanel.alloc().init()
-            save_panel.setTitle_(t("save_pdf_title"))
-
-            # Генерируем имя файла по умолчанию
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-            default_filename = f"report_{timestamp}.pdf"
-            save_panel.setNameFieldStringValue_(default_filename)
-            save_panel.setAllowedFileTypes_(["pdf"])
-
-            # Показываем диалог
-            result = save_panel.runModal()
-            if result != 1:  # NSModalResponseOK
-                return
-
-            pdf_path = save_panel.URL().path()
-
-            # Генерируем PDF
-            self._generatePdfReport(pdf_path, period_name, project_name)
-
-            # Показываем успешное сообщение
-            alert = NSAlert.alloc().init()
-            alert.setMessageText_(t("pdf_created"))
-            alert.setInformativeText_(f"{t('pdf_saved_to')}\n{pdf_path}")
-            alert.setAlertStyle_(NSAlertStyleInformational)
-            alert.addButtonWithTitle_(t("ok"))
-            alert.runModal()
+            # Генерируем PDF через диалог печати macOS
+            # Диалог позволит пользователю выбрать принтер или сохранить в PDF
+            self._generatePdfReport(None, period_name, project_name)
 
         except Exception as e:
             NSLog(f"exportToPdf_ error: {e}")
@@ -1885,17 +1862,16 @@ class TimeTrackerWindowController(NSObject):
             alert.runModal()
 
     @objc.python_method
-    @objc.python_method
     def _generatePdfReport(self, pdf_path, period_name, project_name):
         """Генерация PDF отчета - вызывает внешний модуль"""
         from pdf_generator import generate_pdf_report
-        
+
         generate_pdf_report(
             self.today_sessions,
             self.projects_cache,
             period_name,
             project_name,
-            pdf_path
+            pdf_path,
         )
 
     def projectSelected_(self, sender):
