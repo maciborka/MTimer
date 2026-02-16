@@ -482,7 +482,7 @@ class Database:
                 SELECT ts.*, tn.name as task_name
                 FROM time_sessions ts
                 LEFT JOIN task_names tn ON ts.task_name_id = tn.id
-                WHERE ts.start_time >= ? AND ts.project_id = ?
+                WHERE ts.start_time >= ? AND ts.project_id = ? AND ts.paid = 0
                 ORDER BY ts.start_time DESC
                 """,
                 (start_of_day, project_id),
@@ -493,7 +493,7 @@ class Database:
                 SELECT ts.*, tn.name as task_name
                 FROM time_sessions ts
                 LEFT JOIN task_names tn ON ts.task_name_id = tn.id
-                WHERE ts.start_time >= ?
+                WHERE ts.start_time >= ? AND ts.paid = 0
                 ORDER BY ts.start_time DESC
                 """,
                 (start_of_day,),
@@ -522,7 +522,7 @@ class Database:
                 SELECT ts.*, tn.name as task_name
                 FROM time_sessions ts
                 LEFT JOIN task_names tn ON ts.task_name_id = tn.id
-                WHERE ts.start_time >= ? AND ts.project_id = ?
+                WHERE ts.start_time >= ? AND ts.project_id = ? AND ts.paid = 0
                 ORDER BY ts.start_time DESC
                 """,
                 (start_of_week_iso, project_id),
@@ -533,7 +533,7 @@ class Database:
                 SELECT ts.*, tn.name as task_name
                 FROM time_sessions ts
                 LEFT JOIN task_names tn ON ts.task_name_id = tn.id
-                WHERE ts.start_time >= ?
+                WHERE ts.start_time >= ? AND ts.paid = 0
                 ORDER BY ts.start_time DESC
                 """,
                 (start_of_week_iso,),
@@ -557,7 +557,7 @@ class Database:
                 """
                 SELECT COALESCE(SUM(duration), 0) as total
                 FROM time_sessions
-                WHERE start_time >= ? AND project_id = ?
+                WHERE start_time >= ? AND project_id = ? AND paid = 0
                 """,
                 (start_of_day, project_id),
             )
@@ -566,7 +566,7 @@ class Database:
                 """
                 SELECT COALESCE(SUM(duration), 0) as total
                 FROM time_sessions
-                WHERE start_time >= ?
+                WHERE start_time >= ? AND paid = 0
                 """,
                 (start_of_day,),
             )
@@ -594,7 +594,7 @@ class Database:
                 """
                 SELECT COALESCE(SUM(duration), 0) as total
                 FROM time_sessions
-                WHERE start_time >= ? AND project_id = ?
+                WHERE start_time >= ? AND project_id = ? AND paid = 0
                 """,
                 (start_of_week_iso, project_id),
             )
@@ -603,7 +603,7 @@ class Database:
                 """
                 SELECT COALESCE(SUM(duration), 0) as total
                 FROM time_sessions
-                WHERE start_time >= ?
+                WHERE start_time >= ? AND paid = 0
                 """,
                 (start_of_week_iso,),
             )
@@ -670,6 +670,21 @@ class Database:
         )
         return True
 
+    def mark_session_as_paid(self, session_id):
+        """
+        Отметить сессию как оплаченную (paid=1).
+        Оплаченные сессии скрываются из основного окна.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE time_sessions SET paid = 1 WHERE id = ?",
+            (session_id,),
+        )
+        conn.commit()
+        print(f"[DB] Marked session {session_id} as paid")
+        return True
+
     def get_last_description_for_project(self, project_id):
         """
         Получить последнее описание задачи для проекта.
@@ -729,7 +744,7 @@ class Database:
             SELECT ts.*, tn.name as task_name
             FROM time_sessions ts
             LEFT JOIN task_names tn ON ts.task_name_id = tn.id
-            WHERE ts.project_id = ?
+            WHERE ts.project_id = ? AND ts.paid = 0
             ORDER BY ts.start_time DESC
         """,
             (project_id,),
@@ -750,6 +765,7 @@ class Database:
                 WHERE ts.project_id = ? 
                   AND ts.start_time >= ? 
                   AND ts.start_time <= ?
+                  AND ts.paid = 0
                 ORDER BY ts.start_time DESC
             """,
                 (project_id, start_date, end_date),
@@ -760,7 +776,7 @@ class Database:
                 SELECT ts.*, tn.name as task_name
                 FROM time_sessions ts
                 LEFT JOIN task_names tn ON ts.task_name_id = tn.id
-                WHERE ts.project_id = ?
+                WHERE ts.project_id = ? AND ts.paid = 0
                 ORDER BY ts.start_time DESC
             """,
                 (project_id,),
@@ -782,6 +798,7 @@ class Database:
                 WHERE ts.start_time >= ? 
                   AND ts.start_time <= ?
                   AND ts.project_id = ?
+                  AND ts.paid = 0
                 ORDER BY ts.start_time DESC
             """,
                 (start_date, end_date, project_id),
@@ -794,6 +811,7 @@ class Database:
                 LEFT JOIN task_names tn ON ts.task_name_id = tn.id
                 WHERE ts.start_time >= ? 
                   AND ts.start_time <= ?
+                  AND ts.paid = 0
                 ORDER BY ts.start_time DESC
             """,
                 (start_date, end_date),
@@ -830,7 +848,7 @@ class Database:
                 SELECT ts.*, tn.name as task_name
                 FROM time_sessions ts
                 LEFT JOIN task_names tn ON ts.task_name_id = tn.id
-                WHERE ts.start_time >= ? AND ts.project_id = ?
+                WHERE ts.start_time >= ? AND ts.project_id = ? AND ts.paid = 0
                 ORDER BY ts.start_time DESC
             """,
                 (start_of_month_iso, project_id),
@@ -841,7 +859,7 @@ class Database:
                 SELECT ts.*, tn.name as task_name
                 FROM time_sessions ts
                 LEFT JOIN task_names tn ON ts.task_name_id = tn.id
-                WHERE ts.start_time >= ?
+                WHERE ts.start_time >= ? AND ts.paid = 0
                 ORDER BY ts.start_time DESC
             """,
                 (start_of_month_iso,),
@@ -869,7 +887,7 @@ class Database:
                 """
                 SELECT COALESCE(SUM(duration), 0) as total
                 FROM time_sessions
-                WHERE start_time >= ? AND project_id = ?
+                WHERE start_time >= ? AND project_id = ? AND paid = 0
                 """,
                 (start_of_month_iso, project_id),
             )
@@ -878,7 +896,7 @@ class Database:
                 """
                 SELECT COALESCE(SUM(duration), 0) as total
                 FROM time_sessions
-                WHERE start_time >= ?
+                WHERE start_time >= ? AND paid = 0
                 """,
                 (start_of_month_iso,),
             )
@@ -899,6 +917,7 @@ class Database:
                 WHERE project_id = ? 
                   AND start_time >= ? 
                   AND start_time <= ?
+                  AND paid = 0
             """,
                 (project_id, start_date, end_date),
             )
@@ -907,7 +926,7 @@ class Database:
                 """
                 SELECT COALESCE(SUM(duration), 0) as total
                 FROM time_sessions
-                WHERE project_id = ?
+                WHERE project_id = ? AND paid = 0
             """,
                 (project_id,),
             )
