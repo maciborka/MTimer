@@ -28,9 +28,11 @@ OPTIONS = {
         "jaraco.functools",
         "jaraco.context",
         "Cocoa",
+        "WebKit",  # Добавлен для PDF генерации
         "database",  # Добавлен модуль database
         "localization",  # Добавлен модуль localization
         "statistics",  # Добавлен модуль statistics
+        "pdf_generator",  # Добавлен модуль генерации PDF
         "sqlite3",  # Явно включаем sqlite3
         "datetime",
         "shutil",

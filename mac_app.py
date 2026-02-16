@@ -26,6 +26,7 @@ from Cocoa import (
     NSAlert,
     NSAlertStyleWarning,
     NSAlertStyleInformational,
+    NSAlertStyleCritical,
     NSView,
     NSColor,
     NSMenu,
@@ -604,6 +605,17 @@ class TimeTrackerWindowController(NSObject):
             objc.selector(self.setFilterMonth_, signature=b"v@:")
         )
         content.addSubview_(self.monthFilterBtn)
+
+        # Кнопка экспорта в PDF - справа от фильтров
+        self.exportPdfBtn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(filterX + 380, filterY, 120, 24)
+        )
+        self.exportPdfBtn.setTitle_(t("export_pdf"))
+        self.exportPdfBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.exportPdfBtn.setButtonType_(0)  # NSMomentaryLightButton - обычная кнопка
+        self.exportPdfBtn.setTarget_(self)
+        self.exportPdfBtn.setAction_(objc.selector(self.exportToPdf_, signature=b"v@:"))
+        content.addSubview_(self.exportPdfBtn)
 
         # Поля выбора дат (по умолчанию скрыты) - размещаются НИЖЕ кнопок фильтров
         customDateY = filterY - 30  # 30 пикселей ниже кнопок
@@ -1779,6 +1791,112 @@ class TimeTrackerWindowController(NSObject):
 
         except Exception as e:
             NSLog(f"applyCustomFilter_ error: {e}")
+
+    def exportToPdf_(self, sender):
+        """Экспорт отчета в PDF"""
+        try:
+            from datetime import datetime
+            from Foundation import (
+                NSGraphicsContext,
+                NSPDFGraphicsContext,
+                NSColor,
+                NSMutableDictionary,
+                NSString,
+                NSURL,
+            )
+            import os
+
+            # Получаем текущие данные из отфильтрованных сессий
+            if not self.today_sessions:
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_(t("export_pdf_title"))
+                alert.setInformativeText_("Нет данных для экспорта")
+                alert.setAlertStyle_(NSAlertStyleWarning)
+                alert.addButtonWithTitle_(t("ok"))
+                alert.runModal()
+                return
+
+            # Определяем название периода для отчета
+            period_name = ""
+            if self.current_filter == "today":
+                period_name = t("today_label")
+            elif self.current_filter == "week":
+                period_name = t("week_label")
+            elif self.current_filter == "month":
+                period_name = t("month_label")
+            elif self.current_filter == "custom":
+                from_date = getattr(self, "custom_from_date", "")
+                to_date = getattr(self, "custom_to_date", "")
+                period_name = f"{from_date} - {to_date}"
+
+            # Получаем название проекта если выбран конкретный
+            project_name = t("all_projects")
+            if self.selected_project_id:
+                project = next(
+                    (
+                        p
+                        for p in self.projects_cache
+                        if p["id"] == self.selected_project_id
+                    ),
+                    None,
+                )
+                if project:
+                    project_name = project["name"]
+
+            # Диалог сохранения файла
+            save_panel = NSSavePanel.alloc().init()
+            save_panel.setTitle_(t("save_pdf_title"))
+
+            # Генерируем имя файла по умолчанию
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+            default_filename = f"report_{timestamp}.pdf"
+            save_panel.setNameFieldStringValue_(default_filename)
+            save_panel.setAllowedFileTypes_(["pdf"])
+
+            # Показываем диалог
+            result = save_panel.runModal()
+            if result != 1:  # NSModalResponseOK
+                return
+
+            pdf_path = save_panel.URL().path()
+
+            # Генерируем PDF
+            self._generatePdfReport(pdf_path, period_name, project_name)
+
+            # Показываем успешное сообщение
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t("pdf_created"))
+            alert.setInformativeText_(f"{t('pdf_saved_to')}\n{pdf_path}")
+            alert.setAlertStyle_(NSAlertStyleInformational)
+            alert.addButtonWithTitle_(t("ok"))
+            alert.runModal()
+
+        except Exception as e:
+            NSLog(f"exportToPdf_ error: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_(t("pdf_error"))
+            alert.setInformativeText_(str(e))
+            alert.setAlertStyle_(NSAlertStyleCritical)
+            alert.addButtonWithTitle_(t("ok"))
+            alert.runModal()
+
+    @objc.python_method
+    @objc.python_method
+    def _generatePdfReport(self, pdf_path, period_name, project_name):
+        """Генерация PDF отчета - вызывает внешний модуль"""
+        from pdf_generator import generate_pdf_report
+        
+        generate_pdf_report(
+            self.today_sessions,
+            self.projects_cache,
+            period_name,
+            project_name,
+            pdf_path
+        )
 
     def projectSelected_(self, sender):
         """Обработчик выбора проекта в dropdown"""
