@@ -165,6 +165,116 @@ def _get_base_dir():
 APP_NAME = t("app_name")
 
 
+# ============================================
+# Window Positioning Utilities
+# ============================================
+
+
+def _getPrimaryScreen():
+    """
+    Get the primary screen (main display).
+    Uses NSScreen.screens()[0] instead of mainScreen()
+    because mainScreen() returns the "active" screen (where cursor/focus is),
+    not necessarily the primary display.
+
+    Returns:
+        NSScreen object for primary display
+    """
+    screens = NSScreen.screens()
+    if screens and len(screens) > 0:
+        primary = screens[0]
+        NSLog(
+            f"[Window] Primary screen: {primary.frame().size.width}x{primary.frame().size.height}"
+        )
+        return primary
+    else:
+        # Fallback to mainScreen if screens() fails
+        NSLog("[Window] WARNING: NSScreen.screens() returned empty, using mainScreen()")
+        return NSScreen.mainScreen()
+
+
+def _logAllScreens():
+    """
+    Log information about all connected screens for debugging.
+    Helps understand multi-monitor setups.
+    """
+    screens = NSScreen.screens()
+    NSLog(f"[Window] Total screens detected: {len(screens)}")
+
+    for i, screen in enumerate(screens):
+        frame = screen.frame()
+        visible = screen.visibleFrame()
+        NSLog(f"[Window] Screen {i}:")
+        NSLog(
+            f"  - Frame: origin=({frame.origin.x:.0f}, {frame.origin.y:.0f}), size={frame.size.width:.0f}x{frame.size.height:.0f}"
+        )
+        NSLog(
+            f"  - Visible: origin=({visible.origin.x:.0f}, {visible.origin.y:.0f}), size={visible.size.width:.0f}x{visible.size.height:.0f}"
+        )
+        NSLog(f"  - Is main screen: {i == 0}")
+
+
+def _isWindowFullyVisible(window):
+    """
+    Check if window center point is on any visible screen.
+    Used to detect if saved position is off-screen (e.g., monitor disconnected).
+
+    Args:
+        window: NSWindow object
+
+    Returns:
+        True if window center is visible on any screen, False otherwise
+    """
+    window_frame = window.frame()
+    center_x = window_frame.origin.x + window_frame.size.width / 2
+    center_y = window_frame.origin.y + window_frame.size.height / 2
+
+    screens = NSScreen.screens()
+    for screen in screens:
+        screen_frame = screen.frame()
+
+        # Check if center point is within screen bounds
+        if (
+            screen_frame.origin.x
+            <= center_x
+            <= screen_frame.origin.x + screen_frame.size.width
+            and screen_frame.origin.y
+            <= center_y
+            <= screen_frame.origin.y + screen_frame.size.height
+        ):
+            NSLog(
+                f"[Window] Window center ({center_x:.0f}, {center_y:.0f}) is visible on screen"
+            )
+            return True
+
+    NSLog(
+        f"[Window] WARNING: Window center ({center_x:.0f}, {center_y:.0f}) is OFF-SCREEN"
+    )
+    return False
+
+
+def _logWindowState(window, name):
+    """
+    Log detailed window state for debugging.
+    Shows position, size, visibility flags, and other important properties.
+
+    Args:
+        window: NSWindow object
+        name: Window name for logging (e.g., "main_window")
+    """
+    frame = window.frame()
+    NSLog(f"[Window] State for '{name}':")
+    NSLog(f"  - Position: ({frame.origin.x:.0f}, {frame.origin.y:.0f})")
+    NSLog(f"  - Size: {frame.size.width:.0f}x{frame.size.height:.0f}")
+    NSLog(f"  - isVisible: {window.isVisible()}")
+    NSLog(f"  - isKeyWindow: {window.isKeyWindow()}")
+    NSLog(f"  - isMainWindow: {window.isMainWindow()}")
+    NSLog(f"  - isMiniaturized: {window.isMiniaturized()}")
+    NSLog(f"  - level: {window.level()}")
+    NSLog(f"  - alphaValue: {window.alphaValue()}")
+    NSLog(f"  - screen: {window.screen()}")
+
+
 class DeletableTableView(NSTableView):
     """Таблица, перехватывающая клавишу Delete для удаления строки."""
 
@@ -208,36 +318,78 @@ class TimeTrackerWindowController(NSObject):
         return self
 
     def setupUI(self):
-        NSLog("=== setupUI: Starting ===")
-        # Создаем окно
-        NSLog("=== setupUI: Getting main screen ===")
-        screen = NSScreen.mainScreen().frame()
-        NSLog(
-            f"=== setupUI: Screen size: {screen.size.width} x {screen.size.height} ==="
+        print("[Window] === setupUI: Starting for main_window ===")
+
+        # Log all screens for debugging
+        _logAllScreens()
+
+        # Get primary screen (always screens()[0], NOT mainScreen())
+        print("[Window] === setupUI: Getting primary screen ===")
+        screen = _getPrimaryScreen().frame()
+        print(
+            f"[Window] Primary screen size: {screen.size.width} x {screen.size.height}"
         )
-        # Адаптивный размер окна под размер экрана
-        width = min(
-            900, screen.size.width - 100
-        )  # оставляем отступ 50px с каждой стороны
-        height = min(640, screen.size.height - 100)
-        x = max(50, (screen.size.width - width) / 2)  # минимум 50px от края
-        y = max(50, (screen.size.height - height) / 2)
-        NSLog(f"=== setupUI: Window position: {x}, {y}, size: {width}x{height} ===")
+
+        # Default window dimensions
+        default_width = min(900, screen.size.width - 100)
+        default_height = min(640, screen.size.height - 100)
+
+        # Try to load saved window position
+        saved_pos = self.db.get_window_position("main_window")
+
+        if saved_pos:
+            print(
+                f"[Window] Found saved position: x={saved_pos['x']:.0f}, y={saved_pos['y']:.0f}, size={saved_pos['width']:.0f}x{saved_pos['height']:.0f}"
+            )
+            x = saved_pos["x"]
+            y = saved_pos["y"]
+            width = saved_pos["width"]
+            height = saved_pos["height"]
+        else:
+            print("[Window] No saved position, using defaults")
+            width = default_width
+            height = default_height
+            x = None  # Will use center() later
+            y = None
+
+        # Create window
         style = NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask
-        NSLog("=== setupUI: Creating window ===")
+        print("[Window] === setupUI: Creating window ===")
+
+        # Create window at origin first (we'll position it after)
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(x, y, width, height), style, 2, False
+            NSMakeRect(0, 0, width, height), style, 2, False
         )
-        NSLog("=== setupUI: Window created ===")
+        print("[Window] Window created")
         self.window.setTitle_(APP_NAME)
 
+        # Position window
+        if saved_pos:
+            # Use saved position
+            self.window.setFrameOrigin_((x, y))
+            print(f"[Window] Applied saved position: ({x:.0f}, {y:.0f})")
+
+            # Check if window is visible on any screen
+            if not _isWindowFullyVisible(self.window):
+                print(
+                    "[Window] Saved position is off-screen, centering on primary screen"
+                )
+                self.window.center()
+        else:
+            # Center on primary screen for first launch
+            print("[Window] Centering window on primary screen")
+            self.window.center()
+
+        # Log window state before showing
+        _logWindowState(self.window, "main_window (before show)")
+
         # Устанавливаем иконку окна - ВРЕМЕННО ОТКЛЮЧЕНО из-за bus error
-        # NSLog("=== setupUI: Setting window icon ===")
+        # print("[Window] === setupUI: Setting window icon ===")
         # try:
         #     self._setWindowIcon(self.window)
-        #     NSLog("=== setupUI: Window icon set successfully ===")
+        #     print("[Window] === setupUI: Window icon set successfully ===")
         # except Exception as e:
-        #     NSLog(f"=== setupUI: Window icon error: {e} ===")
+        #     print(f"[Window] === setupUI: Window icon error: {e} ===")
 
         # Устанавливаем минимальный размер окна (но не больше реального размера)
         min_width = min(700, screen.size.width - 100)
@@ -643,8 +795,48 @@ class TimeTrackerWindowController(NSObject):
 
     def windowShouldClose_(self, sender):
         """Перехватываем закрытие окна - скрываем вместо закрытия"""
+        NSLog("[Window] windowShouldClose_ called - saving position before hiding")
+        # Save window position before hiding
+        self._saveWindowPosition()
         self.window.orderOut_(None)
         return False
+
+    def _saveWindowPosition(self):
+        """Save current window position to database"""
+        try:
+            frame = self.window.frame()
+            x = frame.origin.x
+            y = frame.origin.y
+            width = frame.size.width
+            height = frame.size.height
+
+            # Determine which screen the window is on
+            window_screen = self.window.screen()
+            screens = NSScreen.screens()
+            screen_index = 0
+
+            if window_screen:
+                for i, screen in enumerate(screens):
+                    if screen == window_screen:
+                        screen_index = i
+                        break
+
+            NSLog(
+                f"[Window] Saving main_window position: ({x:.0f}, {y:.0f}), size: {width:.0f}x{height:.0f}, screen: {screen_index}"
+            )
+
+            # Save to database
+            self.db.save_window_position(
+                "main_window", x, y, width, height, screen_index
+            )
+
+            NSLog("[Window] Position saved successfully to database")
+
+        except Exception as e:
+            NSLog(f"[Window] ERROR saving window position: {e}")
+            import traceback
+
+            traceback.print_exc()
 
     def windowDidResize_(self, notification):
         """Обработчик изменения размера окна"""
@@ -1973,16 +2165,40 @@ class TimeTrackerWindowController(NSObject):
             self.timer_running = True
 
             # Восстанавливаем описание и проект в UI
-            if active["description"]:
+            if "description" in active.keys() and active["description"]:
                 self.descriptionField.setStringValue_(active["description"])
 
-            if active["project_name"]:
+            # Safely get project_name (might not exist in older DB schemas)
+            project_name = None
+            if "project_name" in active.keys():
+                project_name = active["project_name"]
+            elif "project_id" in active.keys():
+                project_name = active["project_id"]
+
+            if project_name:
                 # Ищем проект в списке (название может содержать ставку)
                 for i in range(self.projectPopup.numberOfItems()):
                     title = self.projectPopup.itemAtIndex_(i).title()
-                    if title.startswith(active["project_name"]):
+                    # Handle both project name and project ID
+                    if isinstance(project_name, str) and title.startswith(project_name):
                         self.projectPopup.selectItemAtIndex_(i)
                         break
+                    elif isinstance(project_name, int):
+                        # If it's project_id, find by ID
+                        for proj in self.projects_cache:
+                            if proj["id"] == project_name and title.startswith(
+                                proj["name"]
+                            ):
+                                self.projectPopup.selectItemAtIndex_(i)
+                                break
+                    elif isinstance(project_name, int):
+                        # If it's project_id, find by ID
+                        for proj in self.projects_cache:
+                            if proj["id"] == project_name and title.startswith(
+                                proj["name"]
+                            ):
+                                self.projectPopup.selectItemAtIndex_(i)
+                                break
 
             # Обновляем кнопку
             self.startStopBtn.setTitle_("■")
@@ -2364,21 +2580,23 @@ class ProjectSettingsWindowController(NSObject):
 
     def setupUI(self):
         # Создаём окно
-        screen = NSScreen.mainScreen()
+        screen = _getPrimaryScreen()
         screen_frame = screen.frame()
         width = 550
         height = 550
-        x = (screen_frame.size.width - width) / 2
-        y = (screen_frame.size.height - height) / 2
 
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(x, y, width, height),
+            NSMakeRect(0, 0, width, height),
             NSTitledWindowMask | NSClosableWindowMask,
             2,
             False,
         )
         self.window.setTitle_(t("settings"))
         self.window.setReleasedWhenClosed_(False)
+
+        # Center on primary screen
+        self.window.center()
+        print("[Window] ProjectSettings window centered on primary screen")
 
         content = self.window.contentView()
 
@@ -3561,19 +3779,21 @@ class CompaniesWindowController(NSObject):
 
     def setupUI(self):
         # Создаем окно
-        screen = NSScreen.mainScreen().frame()
+        screen = _getPrimaryScreen().frame()
         width, height = 600, 400
-        x = (screen.size.width - width) / 2
-        y = (screen.size.height - height) / 2
 
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(x, y, width, height),
+            NSMakeRect(0, 0, width, height),
             NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask,
             2,
             False,
         )
         self.window.setTitle_(t("manage_companies"))
         self.window.setReleasedWhenClosed_(False)
+
+        # Center on primary screen
+        self.window.center()
+        print("[Window] Companies window centered on primary screen")
 
         content = self.window.contentView()
 
@@ -3815,19 +4035,21 @@ class WorkTypesWindowController(NSObject):
 
     def setupUI(self):
         # Создаем окно
-        screen = NSScreen.mainScreen().frame()
+        screen = _getPrimaryScreen().frame()
         width, height = 600, 400
-        x = (screen.size.width - width) / 2
-        y = (screen.size.height - height) / 2
 
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(x, y, width, height),
+            NSMakeRect(0, 0, width, height),
             NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask,
             2,
             False,
         )
         self.window.setTitle_(t("manage_work_types"))
         self.window.setReleasedWhenClosed_(False)
+
+        # Center on primary screen
+        self.window.center()
+        print("[Window] WorkTypes window centered on primary screen")
 
         content = self.window.contentView()
 
@@ -4087,15 +4309,13 @@ class TaskNamesWindowController(NSObject):
 
     def setupUI(self):
         # Створюємо вікно
-        NSLog("TaskNamesWindowController.setupUI START")
-        screen = NSScreen.mainScreen()
+        print("[Window] TaskNamesWindowController.setupUI START")
+        screen = _getPrimaryScreen()
         screen_frame = screen.frame()
         width = 700
         height = 500
-        x = (screen_frame.size.width - width) / 2
-        y = (screen_frame.size.height - height) / 2
 
-        NSLog(f"Screen frame: {screen_frame}, window position: ({x}, {y})")
+        print(f"[Window] Screen frame: {screen_frame}")
 
         try:
             from Cocoa import (
@@ -4114,12 +4334,16 @@ class TaskNamesWindowController(NSObject):
                 NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask
             )
 
-        NSLog("Creating window...")
+        print("[Window] Creating window...")
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(x, y, width, height), style_mask, 2, False
+            NSMakeRect(0, 0, width, height), style_mask, 2, False
         )
-        NSLog(f"Window created: {self.window}")
+        print(f"[Window] Window created: {self.window}")
         self.window.setTitle_(t("task_names"))
+
+        # Center on primary screen
+        self.window.center()
+        print("[Window] TaskNames window centered on primary screen")
         self.window.setReleasedWhenClosed_(False)
 
         from Cocoa import NSMakeSize
@@ -4337,12 +4561,10 @@ class AllTasksWindowController(NSObject):
 
     def setupUI(self):
         # Створюємо вікно
-        screen = NSScreen.mainScreen()
+        screen = _getPrimaryScreen()
         screen_frame = screen.frame()
         width = 900
         height = 600
-        x = (screen_frame.size.width - width) / 2
-        y = (screen_frame.size.height - height) / 2
 
         # Імпортуємо додаткові константи для масштабування
         try:
@@ -4365,8 +4587,12 @@ class AllTasksWindowController(NSObject):
             )  # 4 = NSMiniaturizableWindowMask
 
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(x, y, width, height), style_mask, 2, False
+            NSMakeRect(0, 0, width, height), style_mask, 2, False
         )
+
+        # Center on primary screen
+        self.window.center()
+        print("[Window] AllTasks window centered on primary screen")
         self.window.setTitle_(t("all_tasks"))
         self.window.setReleasedWhenClosed_(False)
 
@@ -4747,12 +4973,62 @@ class AppDelegate(NSObject):
             NSLog("=== setupUI completed ===")
             # ВАЖНО: Сохраняем сильную ссылку на окно, чтобы оно не освобождалось при закрытии
             self.mainWindow = self.controller.window
-            NSLog("=== Window reference saved ===")
+            print("[Window] === Window reference saved ===")
 
-            # Принудительно активируем приложение и показываем окно
+            # 7-step forced window display with extensive logging
+            print("[Window] === Starting 7-step forced window display ===")
+
+            # Log window state BEFORE forced display
+            _logWindowState(self.mainWindow, "main_window (before forced display)")
+
+            # Step 1: Activate app (ignore other apps)
+            print("[Window] Step 1/7: Activating app...")
             NSApp.activateIgnoringOtherApps_(True)
+            print("[Window] Step 1/7: DONE - App activated")
+
+            # Step 2: Set window level
+            print("[Window] Step 2/7: Setting window level to Normal...")
+            from Cocoa import NSNormalWindowLevel
+
+            self.mainWindow.setLevel_(NSNormalWindowLevel)
+            print(
+                f"[Window] Step 2/7: DONE - Window level set to {self.mainWindow.level()}"
+            )
+
+            # Step 3: Explicitly make visible
+            print("[Window] Step 3/7: Setting isVisible to True...")
+            self.mainWindow.setIsVisible_(True)
+            print(
+                f"[Window] Step 3/7: DONE - isVisible = {self.mainWindow.isVisible()}"
+            )
+
+            # Step 4: Ensure not transparent
+            print("[Window] Step 4/7: Setting alphaValue to 1.0...")
+            self.mainWindow.setAlphaValue_(1.0)
+            print(
+                f"[Window] Step 4/7: DONE - alphaValue = {self.mainWindow.alphaValue()}"
+            )
+
+            # Step 5: Order front regardless
+            print("[Window] Step 5/7: Calling orderFrontRegardless...")
+            self.mainWindow.orderFrontRegardless()
+            print("[Window] Step 5/7: DONE - orderFrontRegardless called")
+
+            # Step 6: Make key and order front
+            print("[Window] Step 6/7: Calling makeKeyAndOrderFront...")
             self.mainWindow.makeKeyAndOrderFront_(None)
-            NSLog("=== Window forcibly shown ===")
+            print(
+                f"[Window] Step 6/7: DONE - isKeyWindow = {self.mainWindow.isKeyWindow()}"
+            )
+
+            # Step 7: Re-activate app
+            print("[Window] Step 7/7: Re-activating app...")
+            NSApp.activateIgnoringOtherApps_(True)
+            print("[Window] Step 7/7: DONE - App re-activated")
+
+            # Log window state AFTER forced display
+            _logWindowState(self.mainWindow, "main_window (AFTER forced display)")
+            print("[Window] === 7-step forced window display COMPLETED ===")
 
             # Окно настроек проектов
             self.settingsController = None
@@ -4787,6 +5063,22 @@ class AppDelegate(NSObject):
             self.controller.db.close()
         except Exception:
             pass
+
+    def applicationWillTerminate_(self, notification):
+        """Called when application is about to terminate (Cmd+Q or Quit menu)"""
+        NSLog("[App] applicationWillTerminate_ - saving window position")
+        try:
+            # Save main window position before quitting
+            if hasattr(self, "controller") and self.controller is not None:
+                self.controller._saveWindowPosition()
+                NSLog("[App] Window position saved on quit")
+            else:
+                NSLog("[App] ERROR: controller not found or is None")
+        except Exception as e:
+            NSLog(f"[App] ERROR saving window position on quit: {e}")
+            import traceback
+
+            traceback.print_exc()
 
     def applicationShouldTerminateAfterLastWindowClosed_(self, app):
         # Закрытие окна не завершает приложение - оно остаётся в статус-баре
