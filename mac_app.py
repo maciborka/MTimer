@@ -632,8 +632,10 @@ class TimeTrackerWindowController(NSObject):
         min_date = NSDate.dateWithTimeIntervalSince1970_(min_date_py.timestamp())
         max_date = NSDate.dateWithTimeIntervalSince1970_(max_date_py.timestamp())
 
-        # Create date formatter for long format
-        locale = NSLocale.currentLocale()
+        # Create date formatter for long format with Russian locale
+        from Foundation import NSLocale
+
+        locale = NSLocale.alloc().initWithLocaleIdentifier_("ru_RU")
         self.date_formatter = NSDateFormatter.alloc().init()
         self.date_formatter.setLocale_(locale)
         self.date_formatter.setDateStyle_(3)  # NSDateFormatterLongStyle
@@ -642,49 +644,39 @@ class TimeTrackerWindowController(NSObject):
         self.from_date = min_date
         self.to_date = max_date
 
-        # Text field for "from" date with long format
-        self.fromDateField = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(filterX + 30, customDateY - 5, 150, 24)
-        )
-        self.fromDateField.setStringValue_(
-            self.date_formatter.stringFromDate_(self.from_date)
-        )
-        self.fromDateField.setBezeled_(True)
-        self.fromDateField.setEditable_(False)
-        self.fromDateField.setDrawsBackground_(True)
-        self.fromDateField.setHidden_(True)
-        content.addSubview_(self.fromDateField)
-
-        # Calendar button for "from" date
-        self.fromCalendarBtn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(filterX + 185, customDateY - 5, 24, 24)
-        )
-        self.fromCalendarBtn.setTitle_("📅")
-        self.fromCalendarBtn.setBezelStyle_(NSBezelStyleRounded)
-        self.fromCalendarBtn.setTarget_(self)
-        self.fromCalendarBtn.setAction_(
-            objc.selector(self.showFromDatePicker_, signature=b"v@:")
-        )
-        self.fromCalendarBtn.setHidden_(True)
-        content.addSubview_(self.fromCalendarBtn)
-
-        # Hidden NSDatePicker for "from" date (will be shown in popover)
+        # Compact NSDatePicker for "from" date - native macOS style
         self.fromDatePicker = NSDatePicker.alloc().initWithFrame_(
-            NSMakeRect(0, 0, 140, 140)
+            NSMakeRect(filterX + 30, customDateY - 5, 180, 24)
         )
-        self.fromDatePicker.setDatePickerStyle_(1)  # NSDatePickerStyleClockAndCalendar
+        self.fromDatePicker.setDatePickerStyle_(
+            0
+        )  # NSDatePickerStyleTextFieldAndStepper
         self.fromDatePicker.setDatePickerElements_(NSYearMonthDayDatePickerElementFlag)
         self.fromDatePicker.setDatePickerMode_(0)  # NSSingleDateMode
         self.fromDatePicker.setBezeled_(True)
         self.fromDatePicker.setBordered_(True)
         self.fromDatePicker.setMinDate_(min_date)
         self.fromDatePicker.setMaxDate_(max_date)
-        self.fromDatePicker.setDateValue_(self.from_date)
+        self.fromDatePicker.setDateValue_(min_date)
         self.fromDatePicker.setLocale_(locale)
+
+        # Try to set the formatter for long date format
+        date_formatter = NSDateFormatter.alloc().init()
+        date_formatter.setLocale_(locale)
+        date_formatter.setDateStyle_(3)  # NSDateFormatterLongStyle
+
+        # Apply formatter to cell
+        if hasattr(self.fromDatePicker, "cell"):
+            cell = self.fromDatePicker.cell()
+            if cell:
+                cell.setFormatter_(date_formatter)
+
         self.fromDatePicker.setTarget_(self)
         self.fromDatePicker.setAction_(
             objc.selector(self.fromDateChanged_, signature=b"v@:")
         )
+        self.fromDatePicker.setHidden_(True)
+        content.addSubview_(self.fromDatePicker)
 
         # Метка "По:"
         self.toDateLabel = NSTextField.alloc().initWithFrame_(
@@ -697,49 +689,32 @@ class TimeTrackerWindowController(NSObject):
         self.toDateLabel.setHidden_(True)
         content.addSubview_(self.toDateLabel)
 
-        # Text field for "to" date with long format
-        self.toDateField = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(filterX + 250, customDateY - 5, 150, 24)
-        )
-        self.toDateField.setStringValue_(
-            self.date_formatter.stringFromDate_(self.to_date)
-        )
-        self.toDateField.setBezeled_(True)
-        self.toDateField.setEditable_(False)
-        self.toDateField.setDrawsBackground_(True)
-        self.toDateField.setHidden_(True)
-        content.addSubview_(self.toDateField)
-
-        # Calendar button for "to" date
-        self.toCalendarBtn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(filterX + 405, customDateY - 5, 24, 24)
-        )
-        self.toCalendarBtn.setTitle_("📅")
-        self.toCalendarBtn.setBezelStyle_(NSBezelStyleRounded)
-        self.toCalendarBtn.setTarget_(self)
-        self.toCalendarBtn.setAction_(
-            objc.selector(self.showToDatePicker_, signature=b"v@:")
-        )
-        self.toCalendarBtn.setHidden_(True)
-        content.addSubview_(self.toCalendarBtn)
-
-        # Hidden NSDatePicker for "to" date (will be shown in popover)
+        # Compact NSDatePicker for "to" date - native macOS style
         self.toDatePicker = NSDatePicker.alloc().initWithFrame_(
-            NSMakeRect(0, 0, 140, 140)
+            NSMakeRect(filterX + 250, customDateY - 5, 180, 24)
         )
-        self.toDatePicker.setDatePickerStyle_(1)  # NSDatePickerStyleClockAndCalendar
+        self.toDatePicker.setDatePickerStyle_(0)  # NSDatePickerStyleTextFieldAndStepper
         self.toDatePicker.setDatePickerElements_(NSYearMonthDayDatePickerElementFlag)
         self.toDatePicker.setDatePickerMode_(0)  # NSSingleDateMode
         self.toDatePicker.setBezeled_(True)
         self.toDatePicker.setBordered_(True)
         self.toDatePicker.setMinDate_(min_date)
         self.toDatePicker.setMaxDate_(max_date)
-        self.toDatePicker.setDateValue_(self.to_date)
+        self.toDatePicker.setDateValue_(max_date)
         self.toDatePicker.setLocale_(locale)
+
+        # Apply formatter to cell
+        if hasattr(self.toDatePicker, "cell"):
+            cell_to = self.toDatePicker.cell()
+            if cell_to:
+                cell_to.setFormatter_(date_formatter)
+
         self.toDatePicker.setTarget_(self)
         self.toDatePicker.setAction_(
             objc.selector(self.toDateChanged_, signature=b"v@:")
         )
+        self.toDatePicker.setHidden_(True)
+        content.addSubview_(self.toDatePicker)
 
         # Кнопка "Применить"
         self.applyCustomFilterBtn = NSButton.alloc().initWithFrame_(
@@ -982,20 +957,14 @@ class TimeTrackerWindowController(NSObject):
             # Элементы для кастомного периода
             customDateY = filterY - 30  # 30 пикселей ниже кнопок
             self.fromDateLabel.setFrame_(NSMakeRect(filterX, customDateY - 5, 25, 20))
-            self.fromDateField.setFrame_(
-                NSMakeRect(filterX + 30, customDateY - 5, 150, 24)
-            )
-            self.fromCalendarBtn.setFrame_(
-                NSMakeRect(filterX + 185, customDateY - 5, 24, 24)
+            self.fromDatePicker.setFrame_(
+                NSMakeRect(filterX + 30, customDateY - 5, 180, 24)
             )
             self.toDateLabel.setFrame_(
                 NSMakeRect(filterX + 220, customDateY - 5, 25, 20)
             )
-            self.toDateField.setFrame_(
-                NSMakeRect(filterX + 250, customDateY - 5, 150, 24)
-            )
-            self.toCalendarBtn.setFrame_(
-                NSMakeRect(filterX + 405, customDateY - 5, 24, 24)
+            self.toDatePicker.setFrame_(
+                NSMakeRect(filterX + 250, customDateY - 5, 180, 24)
             )
             self.applyCustomFilterBtn.setFrame_(
                 NSMakeRect(filterX + 440, customDateY - 5, 80, 24)
@@ -1743,108 +1712,44 @@ class TimeTrackerWindowController(NSObject):
             f"=== setFilterCustom called, current_filter was: {self.current_filter} ==="
         )
         # Показываем/скрываем поля выбора дат
-        is_hidden = self.fromDateField.isHidden()
+        is_hidden = self.fromDatePicker.isHidden()
 
         if is_hidden:
             # Показываем поля и применяем фильтр
             self.fromDateLabel.setHidden_(False)
-            self.fromDateField.setHidden_(False)
-            self.fromCalendarBtn.setHidden_(False)
+            self.fromDatePicker.setHidden_(False)
             self.toDateLabel.setHidden_(False)
-            self.toDateField.setHidden_(False)
-            self.toCalendarBtn.setHidden_(False)
+            self.toDatePicker.setHidden_(False)
             self.applyCustomFilterBtn.setHidden_(False)
             # Применяем custom фильтр сразу
             self.applyCustomFilter_(None)
         else:
             # Скрываем поля и возвращаемся к фильтру "today"
             self.fromDateLabel.setHidden_(True)
-            self.fromDateField.setHidden_(True)
-            self.fromCalendarBtn.setHidden_(True)
+            self.fromDatePicker.setHidden_(True)
             self.toDateLabel.setHidden_(True)
-            self.toDateField.setHidden_(True)
-            self.toCalendarBtn.setHidden_(True)
+            self.toDatePicker.setHidden_(True)
             self.applyCustomFilterBtn.setHidden_(True)
             # Возвращаемся к фильтру "today"
             self.current_filter = "today"
             self.reloadSessions()
 
-    def showFromDatePicker_(self, sender):
-        """Show popover with calendar for 'from' date"""
-        from AppKit import NSPopover, NSViewController, NSView
-
-        # Create popover
-        self.fromPopover = NSPopover.alloc().init()
-
-        # Create view controller with calendar
-        controller = NSViewController.alloc().init()
-        view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 150, 150))
-
-        # Add date picker to view
-        view.addSubview_(self.fromDatePicker)
-        controller.setView_(view)
-
-        self.fromPopover.setContentViewController_(controller)
-        self.fromPopover.setBehavior_(
-            1
-        )  # NSPopoverBehaviorTransient - closes when clicking outside
-        self.fromPopover.showRelativeToRect_ofView_preferredEdge_(
-            sender.bounds(),
-            sender,
-            3,  # NSMinYEdge - below the button
-        )
-
     def fromDateChanged_(self, sender):
-        """Handle 'from' date change"""
-        self.from_date = self.fromDatePicker.dateValue()
-        self.fromDateField.setStringValue_(
-            self.date_formatter.stringFromDate_(self.from_date)
-        )
-        # Close popover if it exists
-        if hasattr(self, "fromPopover") and self.fromPopover:
-            self.fromPopover.close()
-
-    def showToDatePicker_(self, sender):
-        """Show popover with calendar for 'to' date"""
-        from AppKit import NSPopover, NSViewController, NSView
-
-        # Create popover
-        self.toPopover = NSPopover.alloc().init()
-
-        # Create view controller with calendar
-        controller = NSViewController.alloc().init()
-        view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 150, 150))
-
-        # Add date picker to view
-        view.addSubview_(self.toDatePicker)
-        controller.setView_(view)
-
-        self.toPopover.setContentViewController_(controller)
-        self.toPopover.setBehavior_(1)  # NSPopoverBehaviorTransient
-        self.toPopover.showRelativeToRect_ofView_preferredEdge_(
-            sender.bounds(),
-            sender,
-            3,  # NSMinYEdge - below the button
-        )
+        """Handle 'from' date change - just a placeholder, NSDatePicker handles it automatically"""
+        pass
 
     def toDateChanged_(self, sender):
-        """Handle 'to' date change"""
-        self.to_date = self.toDatePicker.dateValue()
-        self.toDateField.setStringValue_(
-            self.date_formatter.stringFromDate_(self.to_date)
-        )
-        # Close popover if it exists
-        if hasattr(self, "toPopover") and self.toPopover:
-            self.toPopover.close()
+        """Handle 'to' date change - just a placeholder, NSDatePicker handles it automatically"""
+        pass
 
     def applyCustomFilter_(self, _):
-        """Применить фильтр с выбранными датами"""
+        """Применить фільтр з вибраними датами"""
         try:
             from datetime import datetime
 
-            # Get dates from stored values
-            from_date_obj = self.from_date
-            to_date_obj = self.to_date
+            # Get dates directly from NSDatePicker
+            from_date_obj = self.fromDatePicker.dateValue()
+            to_date_obj = self.toDatePicker.dateValue()
 
             # Конвертируем NSDate в строку формата YYYY-MM-DD
             from_date = from_date_obj.descriptionWithCalendarFormat_timeZone_locale_(
