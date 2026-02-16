@@ -508,9 +508,43 @@ class Database:
 
         return cursor.fetchall()
 
-    def get_week_total(self):
+    def get_today_total(self, project_id=None):
+        """
+        Получить общее время работы за сегодня (в секундах).
+        Если указан project_id, фильтрует по проекту.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        today = datetime.now().date()
+        start_of_day = datetime.combine(today, datetime.min.time()).isoformat()
+
+        if project_id:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(duration), 0) as total
+                FROM time_sessions
+                WHERE start_time >= ? AND project_id = ?
+                """,
+                (start_of_day, project_id),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(duration), 0) as total
+                FROM time_sessions
+                WHERE start_time >= ?
+                """,
+                (start_of_day,),
+            )
+
+        result = cursor.fetchone()
+        return result["total"] if result else 0
+
+    def get_week_total(self, project_id=None):
         """
         Получить общее время работы за текущую неделю (в секундах).
+        Если указан project_id, фильтрует по проекту.
         """
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -522,14 +556,25 @@ class Database:
             start_of_week, datetime.min.time()
         ).isoformat()
 
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(duration), 0) as total
-            FROM time_sessions
-            WHERE start_time >= ?
-            """,
-            (start_of_week_iso,),
-        )
+        if project_id:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(duration), 0) as total
+                FROM time_sessions
+                WHERE start_time >= ? AND project_id = ?
+                """,
+                (start_of_week_iso, project_id),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(duration), 0) as total
+                FROM time_sessions
+                WHERE start_time >= ?
+                """,
+                (start_of_week_iso,),
+            )
+
         result = cursor.fetchone()
         return result["total"] if result else 0
 
@@ -771,8 +816,11 @@ class Database:
 
         return cursor.fetchall()
 
-    def get_month_total(self):
-        """Получить общее время работы за текущий месяц (в секундах)"""
+    def get_month_total(self, project_id=None):
+        """
+        Получить общее время работы за текущий месяц (в секундах).
+        Если указан project_id, фильтрует по проекту.
+        """
         conn = self.get_connection()
         cursor = conn.cursor()
 
@@ -783,14 +831,24 @@ class Database:
             start_of_month, datetime.min.time()
         ).isoformat()
 
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(duration), 0) as total
-            FROM time_sessions
-            WHERE start_time >= ?
-        """,
-            (start_of_month_iso,),
-        )
+        if project_id:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(duration), 0) as total
+                FROM time_sessions
+                WHERE start_time >= ? AND project_id = ?
+                """,
+                (start_of_month_iso, project_id),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(duration), 0) as total
+                FROM time_sessions
+                WHERE start_time >= ?
+                """,
+                (start_of_month_iso,),
+            )
 
         result = cursor.fetchone()
         return result["total"] if result else 0

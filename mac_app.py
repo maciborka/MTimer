@@ -871,10 +871,14 @@ class TimeTrackerWindowController(NSObject):
                 from_date = getattr(self, "custom_from_date", None)
                 to_date = getattr(self, "custom_to_date", None)
                 if from_date and to_date:
+                    # Добавляем время в формате ISO для корректного сравнения
+                    from_datetime = from_date + "T00:00:00"
+                    to_datetime = to_date + "T23:59:59"
+
                     self.today_sessions = [
                         dict(row)
                         for row in self.db.get_sessions_in_range(
-                            from_date, to_date + " 23:59:59"
+                            from_datetime, to_datetime
                         )
                     ]
                     self.today_sessions = [
@@ -891,21 +895,23 @@ class TimeTrackerWindowController(NSObject):
                     period_total = 0
                     period_label = t("custom_period")
             else:
+                # Получаем сессии через get_sessions_by_filter и фильтруем по project_id
                 self.today_sessions = [
                     dict(row)
-                    for row in self.db.get_sessions_by_project(
-                        self.selected_project_id, self.current_filter
+                    for row in self.db.get_sessions_by_filter(
+                        self.current_filter, self.selected_project_id
                     )
                 ]
-                period_total = self.db.get_project_total(
-                    self.selected_project_id, self.current_filter
-                )
 
+                # Получаем итог через соответствующий метод
                 if self.current_filter == "today":
+                    period_total = self.db.get_today_total(self.selected_project_id)
                     period_label = t("today_label")
                 elif self.current_filter == "week":
+                    period_total = self.db.get_week_total(self.selected_project_id)
                     period_label = t("week_label")
-                else:
+                else:  # month
+                    period_total = self.db.get_month_total(self.selected_project_id)
                     period_label = t("month_label")
 
             # Находим проект для отображения ставки
@@ -926,10 +932,14 @@ class TimeTrackerWindowController(NSObject):
                 from_date = getattr(self, "custom_from_date", None)
                 to_date = getattr(self, "custom_to_date", None)
                 if from_date and to_date:
+                    # Добавляем время в формате ISO для корректного сравнения
+                    from_datetime = from_date + "T00:00:00"
+                    to_datetime = to_date + "T23:59:59"
+
                     self.today_sessions = [
                         dict(row)
                         for row in self.db.get_sessions_in_range(
-                            from_date, to_date + " 23:59:59"
+                            from_datetime, to_datetime
                         )
                     ]
                     period_total = sum(
@@ -1451,15 +1461,26 @@ class TimeTrackerWindowController(NSObject):
         )
         # Показываем/скрываем поля выбора дат
         is_hidden = self.fromDatePicker.isHidden()
-        self.fromDateLabel.setHidden_(not is_hidden)
-        self.fromDatePicker.setHidden_(not is_hidden)
-        self.toDateLabel.setHidden_(not is_hidden)
-        self.toDatePicker.setHidden_(not is_hidden)
-        self.applyCustomFilterBtn.setHidden_(not is_hidden)
 
-        # Если показываем - применяем фильтр
-        if not is_hidden:
+        if is_hidden:
+            # Показываем поля и применяем фильтр
+            self.fromDateLabel.setHidden_(False)
+            self.fromDatePicker.setHidden_(False)
+            self.toDateLabel.setHidden_(False)
+            self.toDatePicker.setHidden_(False)
+            self.applyCustomFilterBtn.setHidden_(False)
+            # Применяем custom фильтр сразу
             self.applyCustomFilter_(None)
+        else:
+            # Скрываем поля и возвращаемся к фильтру "today"
+            self.fromDateLabel.setHidden_(True)
+            self.fromDatePicker.setHidden_(True)
+            self.toDateLabel.setHidden_(True)
+            self.toDatePicker.setHidden_(True)
+            self.applyCustomFilterBtn.setHidden_(True)
+            # Возвращаемся к фильтру "today"
+            self.current_filter = "today"
+            self.reloadSessions()
 
     def applyCustomFilter_(self, _):
         """Применить фильтр с выбранными датами"""
