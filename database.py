@@ -5,7 +5,8 @@ import shutil
 from localization import t
 
 # Константы версий схемы базы данных
-SCHEMA_VERSION_CURRENT = 2  # Текущая версия с таблицей task_names
+SCHEMA_VERSION_CURRENT = 3  # Текущая версия с таблицей window_positions
+SCHEMA_VERSION_V2 = 2  # Версия с таблицей task_names
 SCHEMA_VERSION_LEGACY = 1  # Старая версия с description напрямую в time_sessions
 
 
@@ -174,19 +175,51 @@ class Database:
                 print(f"[DB] Backup created: {backup_path}")
                 print("[DB] Starting migration...")
 
-                # Запускаем миграцию
-                if self.migrate_to_v2():
-                    print("[DB] Migration completed successfully!")
-                else:
-                    print(
-                        "[DB] ERROR: Migration failed! Database remains in old format."
-                    )
-                    print(f"[DB] You can restore from backup: {backup_path}")
+                # Запускаем миграции последовательно
+                if current_version < SCHEMA_VERSION_V2:
+                    if self.migrate_to_v2():
+                        print("[DB] Migration to v2 completed successfully!")
+                        current_version = SCHEMA_VERSION_V2
+                    else:
+                        print(
+                            "[DB] ERROR: Migration to v2 failed! Database remains in old format."
+                        )
+                        print(f"[DB] You can restore from backup: {backup_path}")
+                        return
+
+                if current_version < SCHEMA_VERSION_CURRENT:
+                    if self.migrate_to_v3():
+                        print("[DB] Migration to v3 completed successfully!")
+                    else:
+                        print("[DB] ERROR: Migration to v3 failed!")
+                        print(f"[DB] You can restore from backup: {backup_path}")
             else:
                 print("[DB] ERROR: Could not create backup, migration aborted!")
                 print("[DB] Database will continue to work in legacy mode.")
         else:
             print(f"[DB] Database schema is up to date (v{current_version})")
+
+    def create_window_positions_table(self):
+        """
+        Create table for storing window positions.
+        Called during migration to v3.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS window_positions (
+                window_name TEXT PRIMARY KEY,
+                x REAL NOT NULL,
+                y REAL NOT NULL,
+                width REAL NOT NULL,
+                height REAL NOT NULL,
+                screen_index INTEGER DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        print("[DB] window_positions table created")
 
     def create_project(self, name, color="#0000FF", hourly_rate=0, company_id=None):
         conn = self.get_connection()
@@ -1004,6 +1037,101 @@ class Database:
             # В случае ошибки считаем что это старая БД
             return SCHEMA_VERSION_LEGACY
 
+    # ============================================
+    # Window Positions Management
+    # ============================================
+
+    def save_window_position(self, window_name, x, y, width, height, screen_index=0):
+        """
+        Save window position to database.
+        Called when window is closed (windowWillClose_).
+
+        Args:
+            window_name: Unique identifier for the window (e.g., 'main_window', 'settings_window')
+            x, y: Window position coordinates
+            width, height: Window dimensions
+            screen_index: Index of the screen (0 = primary)
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO window_positions 
+                (window_name, x, y, width, height, screen_index, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    window_name,
+                    x,
+                    y,
+                    width,
+                    height,
+                    screen_index,
+                    datetime.now().isoformat(),
+                ),
+            )
+
+            conn.commit()
+            print(
+                f"[DB] Saved position for {window_name}: x={x:.0f}, y={y:.0f}, size={width:.0f}x{height:.0f}, screen={screen_index}"
+            )
+            return True
+        except Exception as e:
+            print(f"[DB] Error saving window position for {window_name}: {e}")
+            return False
+
+    def get_window_position(self, window_name):
+        """
+        Get saved window position from database.
+
+        Args:
+            window_name: Unique identifier for the window
+
+        Returns:
+            Dictionary with keys: x, y, width, height, screen_index
+            or None if no saved position exists
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                SELECT x, y, width, height, screen_index 
+                FROM window_positions 
+                WHERE window_name = ?
+            """,
+                (window_name,),
+            )
+
+            result = cursor.fetchone()
+
+            if result:
+                pos = {
+                    "x": result["x"],
+                    "y": result["y"],
+                    "width": result["width"],
+                    "height": result["height"],
+                    "screen_index": result["screen_index"],
+                }
+                print(
+                    f"[DB] Loaded position for {window_name}: x={pos['x']:.0f}, y={pos['y']:.0f}, size={pos['width']:.0f}x{pos['height']:.0f}, screen={pos['screen_index']}"
+                )
+                return pos
+            else:
+                print(f"[DB] No saved position found for {window_name}")
+                return None
+
+        except Exception as e:
+            print(f"[DB] Error loading window position for {window_name}: {e}")
+            return None
+
+    # ============================================
+    # Database Migration Methods
+    # ============================================
+
     def set_schema_version(self, version):
         """
         Установить версию схемы базы данных.
@@ -1042,7 +1170,7 @@ class Database:
 
             # Генерируем имя файла с временной меткой
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_filename = f"auto_backup_before_migration_v2_{timestamp}.db"
+            backup_filename = f"auto_backup_before_migration_{timestamp}.db"
             backup_path = os.path.join(backup_dir, backup_filename)
 
             # Копируем файл БД
@@ -1157,7 +1285,7 @@ class Database:
             """)
             cursor.execute(
                 "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)",
-                (SCHEMA_VERSION_CURRENT, datetime.now().isoformat()),
+                (SCHEMA_VERSION_V2, datetime.now().isoformat()),
             )
 
             # Коммитим транзакцию
@@ -1172,6 +1300,56 @@ class Database:
             # Откатываем все изменения
             conn.rollback()
             print(f"[DB] ERROR during migration: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return False
+
+    def migrate_to_v3(self):
+        """
+        Migrate database from version 2 to version 3.
+
+        Changes in v3:
+        - Creates window_positions table for storing window positions
+
+        Returns True if migration successful, False on error.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            print("[DB] Starting migration to v3...")
+
+            # Begin transaction
+            cursor.execute("BEGIN TRANSACTION")
+
+            # 1. Create window_positions table
+            print("[DB] Step 1/2: Creating window_positions table...")
+            self.create_window_positions_table()
+
+            # 2. Set schema version to 3
+            print("[DB] Step 2/2: Setting schema version to 3...")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute(
+                "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)",
+                (SCHEMA_VERSION_CURRENT, datetime.now().isoformat()),
+            )
+
+            # Commit transaction
+            conn.commit()
+            print("[DB] Migration to v3 completed successfully!")
+
+            return True
+
+        except Exception as e:
+            # Rollback all changes
+            conn.rollback()
+            print(f"[DB] ERROR during migration to v3: {e}")
             import traceback
 
             traceback.print_exc()
