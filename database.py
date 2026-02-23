@@ -482,6 +482,14 @@ class Database:
         print(f"[DB] Stopped session {session_id}, duration={duration}s")
         return True
 
+    def delete_session(self, session_id):
+        """Удаляет сессию по её ID."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM time_sessions WHERE id = ?", (session_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
     def get_active_session(self):
         """
         Получить активную (незавершённую) сессию.
