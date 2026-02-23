@@ -509,7 +509,7 @@ class TimeTrackerWindowController(NSObject):
         self.timerCard.addSubview_(self.addProjectBtn)
 
         self.timerLabel = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(self.timerCard.frame().size.width - 180 - 56, rowY, 120, 28)
+            NSMakeRect(width - 240, height - self.topBarHeight - 5, 220, 56)
         )
         self.timerLabel.setStringValue_("00:00:00")
         self.timerLabel.setBezeled_(False)
@@ -517,11 +517,14 @@ class TimeTrackerWindowController(NSObject):
         self.timerLabel.setEditable_(False)
         self.timerLabel.setSelectable_(False)
         self.timerLabel.setAlignment_(NSTextAlignmentCenter)
-        self.timerLabel.setFont_(NSFont.boldSystemFontOfSize_(18))
-        self.timerLabel.setTextColor_(
-            NSColor.labelColor()
-        )  # Адаптивный цвет для таймера
-        self.timerCard.addSubview_(self.timerLabel)
+        # Крупный шрифт и тонкий вес для эстетичного вида на синем фоне
+        self.timerLabel.setFont_(NSFont.monospacedDigitSystemFontOfSize_weight_(42, -0.6))
+        self.timerLabel.setTextColor_(NSColor.whiteColor())
+        self.timerLabel.setHidden_(True) # Скрыто по умолчанию
+        
+        
+        # Мы добавляем таймер на сам view контента, а не в timerCard, поверх topBar
+        content.addSubview_(self.timerLabel)
 
         # Круглая розовая кнопка Старт/Стоп
         btnSize = 44
@@ -1062,9 +1065,11 @@ class TimeTrackerWindowController(NSObject):
             self.projectPopup.setFrame_(NSMakeRect(384, rowY, 200, 28))
             self.addProjectBtn.setFrame_(NSMakeRect(590, rowY, 35, 28))
 
-            # Таймер и кнопка старт/стоп справа
+            # Таймер сверху
+            # timerLabel теперь находится на верхней полосе, выровнен по высоте
+            self.timerLabel.setFrame_(NSMakeRect(width - 240, height - self.topBarHeight - 5, 220, 56))
+            
             cardWidth = width - 10
-            self.timerLabel.setFrame_(NSMakeRect(cardWidth - 180 - 56, rowY, 120, 28))
             btnSize = 44
             self.startStopBtn.setFrame_(
                 NSMakeRect(
@@ -1178,7 +1183,8 @@ class TimeTrackerWindowController(NSObject):
                 NSLog(f"Ошибка обновления полей ввода: {e}")
 
             # Обновляем цвета текстовых меток
-            self.timerLabel.setTextColor_(NSColor.labelColor())
+            # Оставляем белый текст, так как он всегда на синем фоне
+            self.timerLabel.setTextColor_(NSColor.whiteColor())
             self.timerLabel.display()
 
             self.weekTotalField.setTextColor_(NSColor.labelColor())
@@ -2486,6 +2492,8 @@ class TimeTrackerWindowController(NSObject):
                     1.0, 0.25, 0.42, 1.0
                 ).CGColor()
             )
+            if hasattr(self, 'timerLabel') and self.timerLabel:
+                self.timerLabel.setHidden_(False)
         else:
             # Старт: более светлый розовый
             self.startStopBtn.layer().setBackgroundColor_(
@@ -2493,6 +2501,8 @@ class TimeTrackerWindowController(NSObject):
                     1.0, 0.33, 0.55, 1.0
                 ).CGColor()
             )
+            if hasattr(self, 'timerLabel') and self.timerLabel:
+                self.timerLabel.setHidden_(True)
 
     @objc.python_method
     def _restoreActiveSession(self):
