@@ -2563,29 +2563,25 @@ class TimeTrackerWindowController(NSObject):
             if response == 1001:  # Нажата кнопка "Нет" - ЗАВЕРШИТЬ ЗАДАЧУ
                 NSLog("DEBUG: ПОЛЬЗОВАТЕЛЬ НАЖАЛ 'НЕТ' - ЗАВЕРШАЕМ ЗАДАЧУ")
 
-                # Полностью останавливаем таймер и закрываем сессию
-                if paused_session_id and self.timer_running:
+                # Нужно вернуть визуальный таймер, чтобы он работал для будущих задач
+                if self.update_timer_ref is None:
+                    self.update_timer_ref = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                        1.0,
+                        self,
+                        objc.selector(self.tick_, signature=b"v@:@"),
+                        None,
+                        True,
+                    )
+
+                # Полностью останавливаем таймер через штатный метод
+                if self.timer_running and paused_session_id:
                     NSLog(f"DEBUG: Завершаем сессию {paused_session_id}")
-                    self.timer_running = False
-                    self.db.stop_session(paused_session_id)
-                    self.current_session_id = None
-                    self.start_time = None
+                    # Это правильно остановит сессию, обновит таймер, кнопку старта и статус-бар
+                    self.toggleTimer_(None)
+                    # Принудительно устанавливаем 00:00:00
                     self.timerLabel.setStringValue_("00:00:00")
-                    self.toggleBtn.setTitle_(t("start"))
 
-                    # Останавливаем таймер напоминаний
-                    self._stopHourlyReminder()
-
-                    # Обновляем UI
-                    self.reloadSessions()
-
-                    # Обновляем статус-бар
-                    try:
-                        NSApp.delegate().updateStatusItem()
-                    except Exception:
-                        pass
-
-                    NSLog("DEBUG: Задача успешно завершена!")
+                NSLog("DEBUG: Задача успешно завершена!")
             else:  # Нажата кнопка "Да" - ПРОДОЛЖИТЬ РАБОТУ
                 NSLog("DEBUG: Пользователь ответил 'Да', продолжаем работу")
 
