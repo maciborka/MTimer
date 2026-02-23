@@ -44,6 +44,7 @@ from Cocoa import (
     NSDatePicker,
     NSYearMonthDayDatePickerElementFlag,
     NSSound,
+    NSWorkspace,
 )
 from Foundation import (
     NSLog,
@@ -871,6 +872,86 @@ class TimeTrackerWindowController(NSObject):
             )
         except Exception as e:
             NSLog(f"Не удалось подписаться на изменение темы: {e}")
+
+        # Подписка на блокировку/пробуждение экрана
+        try:
+            workspace = NSWorkspace.sharedWorkspace()
+            nc = workspace.notificationCenter()
+            
+            # Когда экран блокируется или компьютер засыпает
+            nc.addObserver_selector_name_object_(
+                self, objc.selector(self.handleScreenLocked_, signature=b"v@:@"), "NSWorkspaceScreensDidSleepNotification", None
+            )
+            nc.addObserver_selector_name_object_(
+                self, objc.selector(self.handleScreenLocked_, signature=b"v@:@"), "NSWorkspaceSessionDidResignActiveNotification", None
+            )
+            
+            # Когда экран разблокируется или компьютер просыпается
+            nc.addObserver_selector_name_object_(
+                self, objc.selector(self.handleScreenUnlocked_, signature=b"v@:@"), "NSWorkspaceScreensDidWakeNotification", None
+            )
+            nc.addObserver_selector_name_object_(
+                self, objc.selector(self.handleScreenUnlocked_, signature=b"v@:@"), "NSWorkspaceSessionDidBecomeActiveNotification", None
+            )
+            NSLog("Успешно подписались на события блокировки экрана")
+        except Exception as e:
+            NSLog(f"Не удалось подписаться на события блокировки экрана: {e}")
+
+    def handleScreenLocked_(self, notification):
+        NSLog("=== Screen locked / sleeping ===")
+        if getattr(self, "timer_running", False):
+            NSLog("Stopping timer due to screen lock...")
+            
+            # Сохраняем информацию, чтобы потом спросить
+            self.was_running_before_lock = True
+            
+            # Останавливаем таймер (сессия в БД корректно завершается)
+            try:
+                self.toggleTimer_(None)
+            except Exception as e:
+                NSLog(f"Ошибка при автоматической остановке таймера: {e}")
+        else:
+            self.was_running_before_lock = False
+
+    def handleScreenUnlocked_(self, notification):
+        NSLog("=== Screen unlocked / awake ===")
+        if getattr(self, "was_running_before_lock", False):
+            try:
+                idx = self.projectPopup.indexOfSelectedItem()
+                project_name = "Без названия"
+                if idx > 0 and idx - 1 < len(self.projects_cache):
+                    project_name = self.projects_cache[idx - 1]["name"]
+                
+                desc = self.descriptionField.stringValue().strip()
+                
+                message = f"Таймер был остановлен при блокировке экрана.\nПроект: {project_name}\n"
+                if desc:
+                    message += f"Задача: {desc}\n\n"
+                message += "Возобновить учет времени?"
+                
+                alert = NSAlert.alloc().init()
+                alert.setMessageText_(t("still_working_question"))
+                alert.setInformativeText_(message)
+                alert.addButtonWithTitle_(t("yes")) 
+                alert.addButtonWithTitle_(t("no"))   
+                alert.setAlertStyle_(1)  # NSInformationalAlertStyle
+                
+                # Выводим приложение на передний план
+                NSApp.activateIgnoringOtherApps_(True)
+                self.window.makeKeyAndOrderFront_(None)
+                
+                response = alert.runModal()
+                # NSAlertFirstButtonReturn = 1000
+                if response == 1000:
+                    NSLog("Пользователь решил продолжить работу после разблокировки")
+                    self.toggleTimer_(None)
+                else:
+                    NSLog("Пользователь решил не продолжать задачу")
+                    
+            except Exception as e:
+                NSLog(f"Ошибка при обработке разблокировки экрана: {e}")
+            finally:
+                self.was_running_before_lock = False
 
     def windowShouldClose_(self, sender):
         """Перехватываем закрытие окна - скрываем вместо закрытия"""
