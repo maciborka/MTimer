@@ -909,6 +909,50 @@ class Database:
         else:
             return []
 
+    def get_statistics_sessions(self, filter_type="all", project_id=None, company_id=None):
+        """Получить сессии для статистики (включая оплаченные) с фильтрацией по проекту и компании"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        query = """
+            SELECT ts.*, tn.name as task_name, p.hourly_rate
+            FROM time_sessions ts
+            LEFT JOIN task_names tn ON ts.task_name_id = tn.id
+            LEFT JOIN projects p ON ts.project_id = p.id
+            WHERE 1=1
+        """
+        params = []
+        
+        today = datetime.now()
+        
+        if filter_type == 'today':
+            start_date = datetime.combine(today.date(), datetime.min.time()).isoformat()
+            query += " AND ts.start_time >= ?"
+            params.append(start_date)
+        elif filter_type == 'week':
+            start_of_week = today.date() - timedelta(days=today.weekday())
+            start_date = datetime.combine(start_of_week, datetime.min.time()).isoformat()
+            query += " AND ts.start_time >= ?"
+            params.append(start_date)
+        elif filter_type == 'month':
+            start_of_month = today.date().replace(day=1)
+            start_date = datetime.combine(start_of_month, datetime.min.time()).isoformat()
+            query += " AND ts.start_time >= ?"
+            params.append(start_date)
+            
+        if project_id is not None:
+            query += " AND ts.project_id = ?"
+            params.append(project_id)
+            
+        if company_id is not None:
+            query += " AND p.company_id = ?"
+            params.append(company_id)
+            
+        query += " ORDER BY ts.start_time DESC"
+        
+        cursor.execute(query, tuple(params))
+        return cursor.fetchall()
+
     def get_month_sessions(self, project_id=None):
         """Получить все сессии за текущий месяц"""
         conn = self.get_connection()

@@ -52,4 +52,4 @@ Icon
 *.sqlite3
 *.db-wal
 *.db-shm
-PORTFOLIO.md
+PORTFOLIO.md.dev_scripts/

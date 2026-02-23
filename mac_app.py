@@ -4887,8 +4887,11 @@ class AllTasksWindowController(NSObject):
         self.window = None
         self.tableView = None
         self.filterPopup = None
+        self.companyPopup = None
         self.projectPopup = None
+        self.companies_cache = []
         self.projects_cache = []
+        self.selected_company_id = None
         self.selected_project_id = None
         self.current_filter = "all"  # За замовчуванням - всі задачі
         return self
@@ -4903,7 +4906,7 @@ class AllTasksWindowController(NSObject):
         # Створюємо вікно
         screen = _getPrimaryScreen()
         screen_frame = screen.frame()
-        width = 900
+        width = 1050
         height = 600
 
         # Імпортуємо додаткові константи для масштабування
@@ -4939,7 +4942,7 @@ class AllTasksWindowController(NSObject):
         # Встановлюємо мінімальний і максимальний розмір вікна
         from Cocoa import NSMakeSize
 
-        self.window.setMinSize_(NSMakeSize(600, 400))
+        self.window.setMinSize_(NSMakeSize(1050, 400))
         self.window.setMaxSize_(NSMakeSize(1600, 1200))
 
         content = self.window.contentView()
@@ -4957,7 +4960,7 @@ class AllTasksWindowController(NSObject):
 
         # Label "Фільтр:"
         self.filterLabel = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(20, filterY, 60, 20)
+            NSMakeRect(10, filterY, 50, 20)
         )
         self.filterLabel.setStringValue_(t("period"))
         self.filterLabel.setBezeled_(False)
@@ -4967,7 +4970,7 @@ class AllTasksWindowController(NSObject):
 
         # Popup для вибору періоду
         self.filterPopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
-            NSMakeRect(90, filterY, 150, 28), False
+            NSMakeRect(60, filterY, 100, 28), False
         )
         self.filterPopup.addItemWithTitle_(t("all"))
         self.filterPopup.addItemWithTitle_(t("today"))
@@ -4979,9 +4982,32 @@ class AllTasksWindowController(NSObject):
         )
         content.addSubview_(self.filterPopup)
 
+        # Label "Компанія:"
+        self.companyLabel = NSTextField.alloc().initWithFrame_(
+            NSMakeRect(165, filterY, 60, 20)
+        )
+        try:
+            self.companyLabel.setStringValue_(t("company") + ":")
+        except:
+            self.companyLabel.setStringValue_("Компанія:")
+        self.companyLabel.setBezeled_(False)
+        self.companyLabel.setDrawsBackground_(False)
+        self.companyLabel.setEditable_(False)
+        content.addSubview_(self.companyLabel)
+
+        # Popup для вибору компанії
+        self.companyPopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
+            NSMakeRect(225, filterY, 145, 28), False
+        )
+        self.companyPopup.setTarget_(self)
+        self.companyPopup.setAction_(
+            objc.selector(self.companyChanged_, signature=b"v@:")
+        )
+        content.addSubview_(self.companyPopup)
+
         # Label "Проект:"
         self.projectLabel = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(270, filterY, 60, 20)
+            NSMakeRect(375, filterY, 50, 20)
         )
         self.projectLabel.setStringValue_(t("project") + ":")
         self.projectLabel.setBezeled_(False)
@@ -4991,7 +5017,7 @@ class AllTasksWindowController(NSObject):
 
         # Popup для вибору проекту
         self.projectPopup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
-            NSMakeRect(340, filterY, 250, 28), False
+            NSMakeRect(425, filterY, 145, 28), False
         )
         self.projectPopup.setTarget_(self)
         self.projectPopup.setAction_(
@@ -5001,7 +5027,7 @@ class AllTasksWindowController(NSObject):
 
         # Label з загальною статистикою
         self.statsLabel = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(600, filterY, 280, 20)
+            NSMakeRect(580, filterY, 450, 20)
         )
         self.statsLabel.setStringValue_("Всього: 0 задач, 00:00:00, $0.00")
         self.statsLabel.setBezeled_(False)
@@ -5068,19 +5094,63 @@ class AllTasksWindowController(NSObject):
         # Встановлюємо делегат вікна для відстеження зміни розміру
         self.window.setDelegate_(self)
 
-        # Завантажуємо список проектів
+        # Завантажуємо список компаній та проектів
+        self.loadCompanies()
         self.loadProjects()
+
+    def loadCompanies(self):
+        """Завантажити список компаній"""
+        if self.db is None:
+            return
+        self.companies_cache = [dict(row) for row in self.db.get_all_companies()]
+        self.companyPopup.removeAllItems()
+        all_companies_title = t("all_companies")
+        if all_companies_title == "all_companies":  # in case translation fails
+            all_companies_title = "Всі компанії"
+        self.companyPopup.addItemWithTitle_(all_companies_title)
+        for c in self.companies_cache:
+            self.companyPopup.addItemWithTitle_(c["name"])
+
+    def companyChanged_(self, sender):
+        """Обробка зміни компанії"""
+        idx = self.companyPopup.indexOfSelectedItem()
+        if idx == 0:
+            self.selected_company_id = None
+        else:
+            company = self.companies_cache[idx - 1]
+            self.selected_company_id = company["id"]
+        
+        # Скидаємо вибраний проект
+        self.selected_project_id = None
+        self.loadProjects()
+        self.reloadData()
 
     def loadProjects(self):
         """Завантажити список проектів"""
         if self.db is None:
             NSLog("ERROR: AllTasksWindowController.loadProjects - db is None!")
             return
-        self.projects_cache = self.db.get_all_projects()
+        all_projects = [dict(row) for row in self.db.get_all_projects()]
+        if getattr(self, "selected_company_id", None) is not None:
+            self.projects_cache = [p for p in all_projects if p.get("company_id") == self.selected_company_id]
+        else:
+            self.projects_cache = all_projects
+            
         self.projectPopup.removeAllItems()
         self.projectPopup.addItemWithTitle_(t("all_projects"))
         for p in self.projects_cache:
             self.projectPopup.addItemWithTitle_(p["name"])
+            
+        # Якщо був обраний проект, намагаємося відновити його вибір
+        idx_to_select = 0
+        if self.selected_project_id is not None:
+            for i, p in enumerate(self.projects_cache, start=1):
+                if p["id"] == self.selected_project_id:
+                    idx_to_select = i
+                    break
+            if idx_to_select == 0:
+                self.selected_project_id = None
+        self.projectPopup.selectItemAtIndex_(idx_to_select)
 
     def filterChanged_(self, sender):
         """Обробка зміни фільтра періоду"""
@@ -5111,31 +5181,14 @@ class AllTasksWindowController(NSObject):
             NSLog("ERROR: AllTasksWindowController db is None!")
             return
 
-        if self.current_filter == "all":
-            # Отримуємо всі задачі
-            if self.selected_project_id is not None:
-                self.all_sessions = [
-                    dict(row)
-                    for row in self.db.get_all_sessions_by_project(
-                        self.selected_project_id
-                    )
-                ]
-            else:
-                self.all_sessions = [dict(row) for row in self.db.get_all_sessions()]
-        else:
-            # Отримуємо задачі за фільтром
-            if self.selected_project_id is not None:
-                self.all_sessions = [
-                    dict(row)
-                    for row in self.db.get_sessions_by_project(
-                        self.selected_project_id, self.current_filter
-                    )
-                ]
-            else:
-                self.all_sessions = [
-                    dict(row)
-                    for row in self.db.get_sessions_by_filter(self.current_filter)
-                ]
+        self.all_sessions = [
+            dict(row) 
+            for row in self.db.get_statistics_sessions(
+                filter_type=self.current_filter,
+                project_id=self.selected_project_id,
+                company_id=getattr(self, "selected_company_id", None)
+            )
+        ]
 
         # Оновлюємо статистику
         total_duration = sum(s["duration"] for s in self.all_sessions)
@@ -5145,14 +5198,23 @@ class AllTasksWindowController(NSObject):
 
         # Рахуємо загальну вартість
         total_cost = 0
+        paid_cost = 0
         for s in self.all_sessions:
             duration_hours = s["duration"] / 3600.0
             hourly_rate = s.get("hourly_rate", 0) or 0
-            total_cost += duration_hours * hourly_rate
+            cost = duration_hours * hourly_rate
+            total_cost += cost
+            if s.get("paid", 0) == 1:
+                paid_cost += cost
 
-        self.statsLabel.setStringValue_(
-            f"Всього: {len(self.all_sessions)} задач, {hours:02d}:{minutes:02d}:{seconds:02d}, ${total_cost:.2f}"
-        )
+        if paid_cost > 0:
+            self.statsLabel.setStringValue_(
+                f"Всього: {len(self.all_sessions)} задач, {hours:02d}:{minutes:02d}:{seconds:02d}, ${total_cost:.2f} (Сплачено: ${paid_cost:.2f})"
+            )
+        else:
+            self.statsLabel.setStringValue_(
+                f"Всього: {len(self.all_sessions)} задач, {hours:02d}:{minutes:02d}:{seconds:02d}, ${total_cost:.2f}"
+            )
 
         self.tableView.reloadData()
 
@@ -5255,20 +5317,26 @@ class AllTasksWindowController(NSObject):
         filterY = height - 60
 
         if hasattr(self, "filterLabel"):
-            self.filterLabel.setFrame_(NSMakeRect(20, filterY, 60, 20))
+            self.filterLabel.setFrame_(NSMakeRect(10, filterY, 50, 20))
 
         if hasattr(self, "filterPopup"):
-            self.filterPopup.setFrame_(NSMakeRect(90, filterY, 150, 28))
+            self.filterPopup.setFrame_(NSMakeRect(60, filterY, 100, 28))
+
+        if hasattr(self, "companyLabel"):
+            self.companyLabel.setFrame_(NSMakeRect(165, filterY, 60, 20))
+
+        if hasattr(self, "companyPopup"):
+            self.companyPopup.setFrame_(NSMakeRect(225, filterY, 145, 28))
 
         if hasattr(self, "projectLabel"):
-            self.projectLabel.setFrame_(NSMakeRect(270, filterY, 60, 20))
+            self.projectLabel.setFrame_(NSMakeRect(375, filterY, 50, 20))
 
         if hasattr(self, "projectPopup"):
-            self.projectPopup.setFrame_(NSMakeRect(340, filterY, 250, 28))
+            self.projectPopup.setFrame_(NSMakeRect(425, filterY, 145, 28))
 
         if hasattr(self, "statsLabel"):
             # statsLabel має autoresizingMask, але оновимо його y-координату
-            labelWidth = 280
+            labelWidth = 450
             self.statsLabel.setFrame_(
                 NSMakeRect(width - labelWidth - 20, filterY, labelWidth, 20)
             )
