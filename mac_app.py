@@ -625,14 +625,22 @@ class TimeTrackerWindowController(NSObject):
         from datetime import datetime, timedelta
         from Foundation import NSLocale, NSDateFormatter
 
-        # Set date range: from January 1st of current year to today
-        current_year = datetime.now().year
-        min_date_py = datetime(current_year, 1, 1, 0, 0, 0)
-        max_date_py = datetime.now().replace(hour=23, minute=59, second=59)
+        # Set date range: from January 1st 2010 to December 31st 2030
+        min_date_py = datetime(2010, 1, 1, 0, 0, 0)
+        max_date_py = datetime(2030, 12, 31, 23, 59, 59)
 
         # Convert Python datetime to NSDate using timestamp
         min_date = NSDate.dateWithTimeIntervalSince1970_(min_date_py.timestamp())
         max_date = NSDate.dateWithTimeIntervalSince1970_(max_date_py.timestamp())
+
+        # For the active selections, we'll initialize them with something sensible
+        # For 'from_date', we can use the start of the current year like before
+        current_year = datetime.now().year
+        default_from_date_py = datetime(current_year, 1, 1, 0, 0, 0)
+        default_from_date = NSDate.dateWithTimeIntervalSince1970_(default_from_date_py.timestamp())
+        
+        default_to_date_py = datetime.now().replace(hour=23, minute=59, second=59)
+        default_to_date = NSDate.dateWithTimeIntervalSince1970_(default_to_date_py.timestamp())
 
         # Create date formatter for long format with Russian locale
         from Foundation import NSLocale
