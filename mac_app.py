@@ -905,6 +905,19 @@ class TimeTrackerWindowController(NSObject):
             # Сохраняем информацию, чтобы потом спросить
             self.was_running_before_lock = True
             
+            # Сохраняем текущий проект и описание до того, как они сбросятся
+            idx = self.projectPopup.indexOfSelectedItem()
+            if idx > 0 and idx - 1 < len(getattr(self, "projects_cache", [])):
+                self.saved_lock_project_id = self.projects_cache[idx - 1]["id"]
+                self.saved_lock_project_name = self.projects_cache[idx - 1]["name"]
+                self.saved_lock_project_idx = idx
+            else:
+                self.saved_lock_project_id = None
+                self.saved_lock_project_name = "Без названия"
+                self.saved_lock_project_idx = 0
+                
+            self.saved_lock_desc = self.descriptionField.stringValue().strip()
+            
             # Останавливаем таймер (сессия в БД корректно завершается)
             try:
                 self.toggleTimer_(None)
@@ -917,12 +930,8 @@ class TimeTrackerWindowController(NSObject):
         NSLog("=== Screen unlocked / awake ===")
         if getattr(self, "was_running_before_lock", False):
             try:
-                idx = self.projectPopup.indexOfSelectedItem()
-                project_name = "Без названия"
-                if idx > 0 and idx - 1 < len(self.projects_cache):
-                    project_name = self.projects_cache[idx - 1]["name"]
-                
-                desc = self.descriptionField.stringValue().strip()
+                project_name = getattr(self, "saved_lock_project_name", "Без названия")
+                desc = getattr(self, "saved_lock_desc", "")
                 
                 message = f"Таймер был остановлен при блокировке экрана.\nПроект: {project_name}\n"
                 if desc:
@@ -944,6 +953,18 @@ class TimeTrackerWindowController(NSObject):
                 # NSAlertFirstButtonReturn = 1000
                 if response == 1000:
                     NSLog("Пользователь решил продолжить работу после разблокировки")
+                    
+                    # Снимаем выделение в таблице, чтобы toggleTimer_ прочитал данные именно из полей
+                    if hasattr(self, "tableView"):
+                        self.tableView.deselectAll_(None)
+                    
+                    # Восстанавливаем сохраненные значения перед вызовом toggleTimer_
+                    if getattr(self, "saved_lock_project_idx", 0) > 0:
+                        self.projectPopup.selectItemAtIndex_(self.saved_lock_project_idx)
+                        self.selected_project_id = getattr(self, "saved_lock_project_id", None)
+                    if desc:
+                        self.descriptionField.setStringValue_(desc)
+                        
                     self.toggleTimer_(None)
                 else:
                     NSLog("Пользователь решил не продолжать задачу")
@@ -1485,6 +1506,55 @@ class TimeTrackerWindowController(NSObject):
             durationLabel.setTextColor_(NSColor.secondaryLabelColor())
             container.addSubview_(durationLabel)
             NSLog(f"=== Duration label added ===")
+
+            try:
+                # Add subtitle logic (Company, Project, Cost)
+                project_id = session.get("project_id")
+                project = None
+                company = None
+                
+                if project_id and hasattr(self, "projects_cache"):
+                    # projects_cache may contain sqlite3.Row objects which don't have .get()
+                    found_proj = next((p for p in self.projects_cache if p["id"] == project_id), None)
+                    if found_proj:
+                        project = dict(found_proj)
+                
+                if project and project.get("company_id") and hasattr(self, "db"):
+                    if not hasattr(self, "companies_cache"):
+                        # Ensure we get dicts for companies_cache
+                        self.companies_cache = [dict(c) for c in self.db.get_all_companies()]
+                    found_comp = next((c for c in self.companies_cache if c["id"] == project.get("company_id")), None)
+                    if found_comp:
+                        company = dict(found_comp)
+                
+                subtitle_parts = []
+                if company:
+                    subtitle_parts.append(f"🏢 {company['name']}")
+                if project:
+                    subtitle_parts.append(f"📁 {project['name']}")
+                
+                duration_val = session.get("duration", 0) or 0
+                if project and project.get("hourly_rate"):
+                    hours = duration_val / 3600.0
+                    cost = hours * float(project["hourly_rate"])
+                    if cost > 0:
+                        subtitle_parts.append(f"💰 ${cost:.2f}")
+
+                subtitle_str = " | ".join(subtitle_parts)
+
+                if subtitle_str:
+                    subtitleLabel = NSTextField.alloc().initWithFrame_(NSMakeRect(10, 2, width * 0.7, 16))
+                    subtitleLabel.setStringValue_(subtitle_str)
+                    subtitleLabel.setBezeled_(False)
+                    subtitleLabel.setDrawsBackground_(False)
+                    subtitleLabel.setEditable_(False)
+                    subtitleLabel.setSelectable_(False)
+                    subtitleLabel.setFont_(NSFont.systemFontOfSize_(11))
+                    subtitleLabel.setTextColor_(NSColor.secondaryLabelColor())
+                    container.addSubview_(subtitleLabel)
+            except Exception as e:
+                NSLog(f"Ошибка получения подзаголовка для сессии: {e}")
+
 
             # Кнопка "Оплачено" (зеленая галочка)
             paidBtn = HoverDeleteButton.alloc().initWithFrame_(
