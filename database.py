@@ -247,6 +247,41 @@ class Database:
             traceback.print_exc()
             return None
 
+    def update_project(self, project_id, name, hourly_rate=0, company_id=None):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                UPDATE projects 
+                SET name = ?, hourly_rate = ?, company_id = ?
+                WHERE id = ?
+                """,
+                (name, hourly_rate, company_id, project_id)
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Failed to update project {project_id}: {e}")
+            return False
+
+    def delete_project(self, project_id):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            # Сначала проверяем, есть ли сессии для этого проекта
+            cursor.execute("SELECT COUNT(*) as cnt FROM time_sessions WHERE project_id = ?", (project_id,))
+            if cursor.fetchone()["cnt"] > 0:
+                print(f"[DB] Cannot delete project {project_id}: it has associated time sessions")
+                return False
+                
+            cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"[DB] Error deleting project {project_id}: {e}")
+            return False
+
     # ============================================
     # CRUD операции для таблицы task_names
     # ============================================
@@ -722,6 +757,50 @@ class Database:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM companies ORDER BY name")
         return cursor.fetchall()
+
+    def create_company(self, code, name):
+        """Создать компанию"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "INSERT INTO companies (code, name) VALUES (?, ?)",
+                (code, name),
+            )
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def update_company(self, company_id, code, name):
+        """Обновить компанию"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE companies SET code = ?, name = ? WHERE id = ?",
+                (code, name, company_id),
+            )
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def delete_company(self, company_id):
+        """Удалить компанию"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        # Проверяем, есть ли проекты, использующие эту компанию
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM projects WHERE company_id = ?",
+            (company_id,),
+        )
+        if cursor.fetchone()["cnt"] > 0:
+            return False
+            
+        cursor.execute("DELETE FROM companies WHERE id = ?", (company_id,))
+        conn.commit()
+        return True
 
     def get_all_sessions(self):
         """Получить все сессии"""

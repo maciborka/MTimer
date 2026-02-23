@@ -3261,7 +3261,13 @@ class ProjectSettingsWindowController(NSObject):
 
             # Устанавливаем выбранную компанию
             if self.companyPopup:
-                company_id = project.get("company_id")
+                try:
+                    p_dict = dict(project)
+                    company_id = p_dict.get("company_id")
+                except Exception:
+                    # Фоллбек на случай старой структуры БД
+                    company_id = None
+                    
                 if company_id:
                     # Ищем индекс компании в списке
                     for i, company in enumerate(self.companies):
@@ -3786,6 +3792,10 @@ class ProjectSettingsWindowController(NSObject):
             NSLog(f"Проект {project['id']} обновлён")
             self.reloadProjects()
             self.tableView.reloadData()
+            
+            # Принудительно обновляем UI-выбор, чтобы выпадающий список компаний не сбрасывался визульно
+            self.tableViewSelectionDidChange_(None)
+
             # Обновим основное окно и статус-бар
             try:
                 app = NSApp.delegate()
