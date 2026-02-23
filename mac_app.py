@@ -5942,9 +5942,9 @@ class AppDelegate(NSObject):
             recentLabel.setEnabled_(False)
             self.statusMenu.addItem_(recentLabel)
 
-            # Создаем 3 пункта меню для последних задач (будут обновляться динамически)
+            # Создаем 5 пунктов меню для последних задач (будут обновляться динамически)
             self.recentTaskItems = []
-            for i in range(3):
+            for i in range(5):
                 item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
                     f"Задача {i + 1}",
                     objc.selector(self.switchToTask_, signature=b"v@:"),
@@ -5995,7 +5995,7 @@ class AppDelegate(NSObject):
         """Запускает таймер для последнего задания с уведомлением"""
         try:
             # Получаем последнюю сессию из БД
-            sessions = list(self.controller.db.get_week_sessions())
+            sessions = list(self.controller.db.get_recent_projects_with_tasks(1))
             if not sessions:
                 NSLog("Нет предыдущих задач для продолжения")
                 return
@@ -6078,10 +6078,10 @@ class AppDelegate(NSObject):
             NSLog(f"Error sending stop notification: {e}")
 
     def switchToTask_(self, sender):
-        """Переключает таймер на выбранную задачу из последних 3"""
+        """Переключает таймер на выбранную задачу из последних 5"""
         try:
             task_index = sender.tag()
-            sessions = list(self.controller.db.get_week_sessions())
+            sessions = list(self.controller.db.get_recent_projects_with_tasks(5))
 
             if task_index >= len(sessions):
                 NSLog(f"Task index {task_index} out of range")
@@ -6128,9 +6128,9 @@ class AppDelegate(NSObject):
 
     @objc.python_method
     def _updateRecentTasksMenu(self):
-        """Обновляет список последних 3 задач в меню"""
+        """Обновляет список последних 5 задач в меню"""
         try:
-            sessions = list(self.controller.db.get_week_sessions())
+            sessions = list(self.controller.db.get_recent_projects_with_tasks(5))
 
             for i, item in enumerate(self.recentTaskItems):
                 if i < len(sessions):

@@ -584,6 +584,30 @@ class Database:
 
         return cursor.fetchall()
 
+    def get_recent_projects_with_tasks(self, limit=5):
+        """
+        Получить последние 5 уникальных проектов/задач с которыми работал пользователь.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT p.id as project_id, p.name as project_name, 
+                   wt.name as work_type_name,
+                   MAX(ts.start_time) as last_start
+            FROM time_sessions ts
+            JOIN projects p ON ts.project_id = p.id
+            LEFT JOIN work_types wt ON ts.work_type_id = wt.id
+            GROUP BY p.id, wt.name
+            ORDER BY last_start DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+
+        return cursor.fetchall()
+
     def get_today_total(self, project_id=None):
         """
         Получить общее время работы за сегодня (в секундах).
