@@ -412,8 +412,8 @@ class TimeTrackerWindowController(NSObject):
         content.setWantsLayer_(True)
 
         # Сохраняем константы для пересчета
-        self.topBarHeight = 56
-        self.cardHeight = 88
+        self.topBarHeight = 84
+        self.cardHeight = 60
 
         # Верхняя синяя плашка (хедер)
         self.topBar = NSView.alloc().initWithFrame_(
@@ -435,7 +435,7 @@ class TimeTrackerWindowController(NSObject):
         self.headerTitle.setDrawsBackground_(False)
         self.headerTitle.setEditable_(False)
         self.headerTitle.setSelectable_(False)
-        self.headerTitle.setFont_(NSFont.boldSystemFontOfSize_(16))
+        self.headerTitle.setFont_(NSFont.systemFontOfSize_weight_(22, NSFontWeightRegular))
         self.headerTitle.setTextColor_(NSColor.whiteColor())
         content.addSubview_(self.headerTitle)
 
@@ -451,8 +451,8 @@ class TimeTrackerWindowController(NSObject):
             self.timerCard.setBoxType_(NSBoxCustom)
             self.timerCard.setBorderType_(0)  # NoBorder
             self.timerCard.setTitlePosition_(0)  # NoTitle
-            self.timerCard.setFillColor_(NSColor.controlBackgroundColor())
-            self.timerCard.setCornerRadius_(12.0)
+            self.timerCard.setFillColor_(NSColor.clearColor())
+            self.timerCard.setCornerRadius_(0.0)
             self.timerCard.setContentViewMargins_((0, 0))
         except Exception as e:
             NSLog(f"Не удалось создать NSBox, используем NSView: {e}")
@@ -564,7 +564,8 @@ class TimeTrackerWindowController(NSObject):
             NSMakeRect(filterX, filterY, 110, 24)
         )
         self.customFilterBtn.setTitle_(t("custom_period"))
-        self.customFilterBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.customFilterBtn.setBezelStyle_(NSBezelStyleRoundRect)
+        self.customFilterBtn.setBordered_(False)
         self.customFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton
         self.customFilterBtn.setTarget_(self)
         self.customFilterBtn.setAction_(
@@ -576,7 +577,8 @@ class TimeTrackerWindowController(NSObject):
             NSMakeRect(filterX + 115, filterY, 80, 24)
         )
         self.todayFilterBtn.setTitle_(t("today"))
-        self.todayFilterBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.todayFilterBtn.setBezelStyle_(NSBezelStyleRoundRect)
+        self.todayFilterBtn.setBordered_(False)
         self.todayFilterBtn.setButtonType_(
             6
         )  # NSPushOnPushOffButton - toggle button поведение
@@ -590,7 +592,8 @@ class TimeTrackerWindowController(NSObject):
             NSMakeRect(filterX + 200, filterY, 80, 24)
         )
         self.weekFilterBtn.setTitle_(t("week"))
-        self.weekFilterBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.weekFilterBtn.setBezelStyle_(NSBezelStyleRoundRect)
+        self.weekFilterBtn.setBordered_(False)
         self.weekFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton
         self.weekFilterBtn.setTarget_(self)
         self.weekFilterBtn.setAction_(
@@ -602,7 +605,8 @@ class TimeTrackerWindowController(NSObject):
             NSMakeRect(filterX + 285, filterY, 80, 24)
         )
         self.monthFilterBtn.setTitle_(t("month"))
-        self.monthFilterBtn.setBezelStyle_(NSBezelStyleRounded)
+        self.monthFilterBtn.setBezelStyle_(NSBezelStyleRoundRect)
+        self.monthFilterBtn.setBordered_(False)
         self.monthFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton
         self.monthFilterBtn.setTarget_(self)
         self.monthFilterBtn.setAction_(
@@ -1057,69 +1061,84 @@ class TimeTrackerWindowController(NSObject):
 
             # Обновляем timerCard
             cardY = height - self.topBarHeight - 20 - self.cardHeight
-            self.timerCard.setFrame_(NSMakeRect(5, cardY, width - 10, self.cardHeight))
+            # TimerCard is now edge-to-edge
+            self.timerCard.setFrame_(NSMakeRect(0, cardY, width, self.cardHeight))
 
-            # Обновляем элементы внутри карточки (адаптивная ширина)
-            rowY = (self.cardHeight - 28) / 2
-            self.descriptionField.setFrame_(NSMakeRect(16, rowY, 360, 28))
-            self.projectPopup.setFrame_(NSMakeRect(384, rowY, 200, 28))
-            self.addProjectBtn.setFrame_(NSMakeRect(590, rowY, 35, 28))
-
-            # Таймер сверху
-            # timerLabel теперь находится на верхней полосе, выровнен по высоте
-            self.timerLabel.setFrame_(NSMakeRect(width - 240, height - self.topBarHeight - 5, 220, 56))
-            
-            cardWidth = width - 10
+            cardWidth = width
             btnSize = 44
             self.startStopBtn.setFrame_(
                 NSMakeRect(
-                    cardWidth - btnSize - 16,
+                    cardWidth - btnSize - 20,
                     (self.cardHeight - btnSize) / 2,
                     btnSize,
                     btnSize,
                 )
             )
 
+            # Таймер сверху
+            self.timerLabel.setFrame_(NSMakeRect(width - 240, height - self.topBarHeight + (self.topBarHeight - 56) / 2 + 5, 220, 56))
+
+            # Элементы внутри карточки
+            rowY = (self.cardHeight - 32) / 2
+            
+            # Plus button
+            self.addProjectBtn.setFrame_(NSMakeRect(cardWidth - btnSize - 20 - 35 - 10, rowY, 35, 32))
+            
+            # Project popup
+            self.projectPopup.setFrame_(NSMakeRect(cardWidth - btnSize - 20 - 35 - 10 - 200 - 10, rowY, 200, 32))
+
+            # Description stretches
+            descWidth = cardWidth - btnSize - 20 - 200 - 10 - 35 - 10 - 20 - 10
+            self.descriptionField.setFrame_(NSMakeRect(20, rowY, descWidth, 32))
+
             # Фильтры и метки
             filterY = cardY - 30
             filterX = 20
 
-            # Кнопки фильтра периода
-            self.customFilterBtn.setFrame_(NSMakeRect(filterX, filterY, 110, 24))
-            self.todayFilterBtn.setFrame_(NSMakeRect(filterX + 115, filterY, 80, 24))
-            self.weekFilterBtn.setFrame_(NSMakeRect(filterX + 200, filterY, 80, 24))
-            self.monthFilterBtn.setFrame_(NSMakeRect(filterX + 285, filterY, 80, 24))
+            # Кнопки фильтра периода (без рамок)
+            self.customFilterBtn.setFrame_(NSMakeRect(filterX, filterY, 100, 28))
+            self.todayFilterBtn.setFrame_(NSMakeRect(filterX + 110, filterY, 80, 28))
+            self.weekFilterBtn.setFrame_(NSMakeRect(filterX + 200, filterY, 80, 28))
+            self.monthFilterBtn.setFrame_(NSMakeRect(filterX + 290, filterY, 80, 28))
 
             # Элементы для кастомного периода
-            customDateY = filterY - 30  # 30 пикселей ниже кнопок
+            customDateY = filterY - 30 
             self.fromDateLabel.setFrame_(NSMakeRect(filterX, customDateY - 5, 25, 20))
-            self.fromDatePicker.setFrame_(
-                NSMakeRect(filterX + 30, customDateY - 5, 180, 24)
-            )
-            self.toDateLabel.setFrame_(
-                NSMakeRect(filterX + 220, customDateY - 5, 25, 20)
-            )
-            self.toDatePicker.setFrame_(
-                NSMakeRect(filterX + 250, customDateY - 5, 180, 24)
-            )
-            self.applyCustomFilterBtn.setFrame_(
-                NSMakeRect(filterX + 440, customDateY - 5, 80, 24)
-            )
+            self.fromDatePicker.setFrame_(NSMakeRect(filterX + 30, customDateY - 5, 180, 24))
+            self.toDateLabel.setFrame_(NSMakeRect(filterX + 220, customDateY - 5, 25, 20))
+            self.toDatePicker.setFrame_(NSMakeRect(filterX + 250, customDateY - 5, 180, 24))
+            self.applyCustomFilterBtn.setFrame_(NSMakeRect(filterX + 440, customDateY - 5, 80, 24))
 
-            # Кнопка экспорта в PDF - справа
             self.exportPdfBtn.setFrame_(NSMakeRect(width - 50, customDateY - 5, 40, 24))
 
             # Поля с общим временем и кнопки
-            self.weekTotalField.setFrame_(NSMakeRect(390, filterY, 300, 20))
-            self.todayTotalField.setFrame_(
-                NSMakeRect(width - 200, filterY + 2, 160, 20)
-            )
-            self.continueBtn.setFrame_(NSMakeRect(width - 360, filterY, 140, 24))
+            # ВСЬОГО: 
+            self.weekTotalField.setFrame_(NSMakeRect(width - 450, filterY + 4, 150, 20))
+            self.todayTotalField.setHidden_(True)
+            
+            # Кнопка Продовжити
+            self.continueBtn.setFrame_(NSMakeRect(width - 290, filterY + 2, 125, 24))
+            
+            # Dummy element (to mimic the 02:30:00 input box in your design without actually adding functionality)
+            if not hasattr(self, "dummyTimeField"):
+                self.dummyTimeField = NSTextField.alloc().initWithFrame_(NSMakeRect(width - 150, filterY + 2, 80, 24))
+                self.dummyTimeField.setPlaceholderString_("00:00:00")
+                self.dummyTimeField.setAlignment_(2) # Center
+                self.window.contentView().addSubview_(self.dummyTimeField)
+                
+                self.dummyAddBtn = NSButton.alloc().initWithFrame_(NSMakeRect(width - 60, filterY + 2, 40, 24))
+                self.dummyAddBtn.setTitle_("+")
+                self.dummyAddBtn.setBezelStyle_(NSBezelStyleRounded)
+                self.window.contentView().addSubview_(self.dummyAddBtn)
+            else:
+                self.dummyTimeField.setFrame_(NSMakeRect(width - 150, filterY + 2, 80, 24))
+                self.dummyAddBtn.setFrame_(NSMakeRect(width - 60, filterY + 2, 40, 24))
+
             if hasattr(self, "statisticsBtn"):
                 self.statisticsBtn.setFrame_(NSMakeRect(20, filterY - 30, 120, 24))
 
             # ScrollView с сессиями - растягивается по высоте и ширине
-            tableTopMargin = 80  # Увеличили отступ для кнопки статистики
+            tableTopMargin = 80
             tableY = 5
             tableHeight = cardY - 20 - tableTopMargin
             if tableHeight < 100:
@@ -1151,13 +1170,11 @@ class TimeTrackerWindowController(NSObject):
         try:
             # Обновляем цвет карточки - если это NSBox, используем setFillColor
             try:
-                self.timerCard.setFillColor_(NSColor.controlBackgroundColor())
+                self.timerCard.setFillColor_(NSColor.clearColor())
             except Exception:
                 # Если это NSView с layer
                 try:
-                    self.timerCard.layer().setBackgroundColor_(
-                        NSColor.controlBackgroundColor().CGColor()
-                    )
+                    pass
                 except Exception:
                     pass
 
@@ -1394,7 +1411,7 @@ class TimeTrackerWindowController(NSObject):
 
             # Создаём новый контейнер
             scroll_width = self.sessionsScroll.frame().size.width
-            new_height = max(100, len(self.today_sessions) * 45 + 10)
+            new_height = max(100, len(self.today_sessions) * 65 + 10)
             self.sessionsStack = FlippedView.alloc().initWithFrame_(
                 NSMakeRect(0, 0, scroll_width, new_height)
             )
