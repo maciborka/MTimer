@@ -2384,6 +2384,10 @@ class TimeTrackerWindowController(NSObject):
             self.start_time = datetime.now()
             self.timer_running = True
             self.startStopBtn.setTitle_("■")
+            try:
+                NSApp.dockTile().setBadgeLabel_("1")
+            except Exception:
+                pass
             self._updateStartStopAppearance()
 
             NSLog("")
@@ -2454,6 +2458,10 @@ class TimeTrackerWindowController(NSObject):
             self.timer_running = False
             self.start_time = None
             self.startStopBtn.setTitle_("▶")
+            try:
+                NSApp.dockTile().setBadgeLabel_(None)
+            except Exception:
+                pass
 
             try:
                 self._updateStartStopAppearance()
@@ -2559,6 +2567,10 @@ class TimeTrackerWindowController(NSObject):
 
             # Обновляем кнопку
             self.startStopBtn.setTitle_("■")
+            try:
+                NSApp.dockTile().setBadgeLabel_("1")
+            except Exception:
+                pass
             self._updateStartStopAppearance()
 
             NSLog(
