@@ -791,6 +791,7 @@ class TimeTrackerWindowController(NSObject):
         self.todayTotalField.setTextColor_(
             NSColor.secondaryLabelColor()
         )  # Чуть светлее для secondary info
+        self.todayTotalField.setHidden_(True)
         content.addSubview_(self.todayTotalField)
 
         # Кнопка Продолжить (перемещаем выше таблицы, рядом с today total)
