@@ -142,7 +142,7 @@ class HoverDeleteButton(NSButton):
             NSColor.colorWithRed_green_blue_alpha_(0.6, 0.6, 0.6, 0.8)
         )
         self.layer().setBackgroundColor_(
-            NSColor.colorWithWhite_alpha_(0.95, 0.7).CGColor()
+            None
         )
 
 
@@ -435,7 +435,7 @@ class TimeTrackerWindowController(NSObject):
         self.headerTitle.setDrawsBackground_(False)
         self.headerTitle.setEditable_(False)
         self.headerTitle.setSelectable_(False)
-        self.headerTitle.setFont_(NSFont.systemFontOfSize_weight_(22, NSFontWeightRegular))
+        self.headerTitle.setFont_(NSFont.systemFontOfSize_weight_(22, 0.0))
         self.headerTitle.setTextColor_(NSColor.whiteColor())
         content.addSubview_(self.headerTitle)
 
@@ -564,7 +564,7 @@ class TimeTrackerWindowController(NSObject):
             NSMakeRect(filterX, filterY, 110, 24)
         )
         self.customFilterBtn.setTitle_(t("custom_period"))
-        self.customFilterBtn.setBezelStyle_(NSBezelStyleRoundRect)
+        self.customFilterBtn.setBezelStyle_(NSBezelStyleRounded)
         self.customFilterBtn.setBordered_(False)
         self.customFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton
         self.customFilterBtn.setTarget_(self)
@@ -577,7 +577,7 @@ class TimeTrackerWindowController(NSObject):
             NSMakeRect(filterX + 115, filterY, 80, 24)
         )
         self.todayFilterBtn.setTitle_(t("today"))
-        self.todayFilterBtn.setBezelStyle_(NSBezelStyleRoundRect)
+        self.todayFilterBtn.setBezelStyle_(NSBezelStyleRounded)
         self.todayFilterBtn.setBordered_(False)
         self.todayFilterBtn.setButtonType_(
             6
@@ -592,7 +592,7 @@ class TimeTrackerWindowController(NSObject):
             NSMakeRect(filterX + 200, filterY, 80, 24)
         )
         self.weekFilterBtn.setTitle_(t("week"))
-        self.weekFilterBtn.setBezelStyle_(NSBezelStyleRoundRect)
+        self.weekFilterBtn.setBezelStyle_(NSBezelStyleRounded)
         self.weekFilterBtn.setBordered_(False)
         self.weekFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton
         self.weekFilterBtn.setTarget_(self)
@@ -605,7 +605,7 @@ class TimeTrackerWindowController(NSObject):
             NSMakeRect(filterX + 285, filterY, 80, 24)
         )
         self.monthFilterBtn.setTitle_(t("month"))
-        self.monthFilterBtn.setBezelStyle_(NSBezelStyleRoundRect)
+        self.monthFilterBtn.setBezelStyle_(NSBezelStyleRounded)
         self.monthFilterBtn.setBordered_(False)
         self.monthFilterBtn.setButtonType_(6)  # NSPushOnPushOffButton
         self.monthFilterBtn.setTarget_(self)
@@ -1117,22 +1117,9 @@ class TimeTrackerWindowController(NSObject):
             self.todayTotalField.setHidden_(True)
             
             # Кнопка Продовжити
-            self.continueBtn.setFrame_(NSMakeRect(width - 290, filterY + 2, 125, 24))
+            self.continueBtn.setFrame_(NSMakeRect(width - 150, filterY + 2, 125, 24))
             
-            # Dummy element (to mimic the 02:30:00 input box in your design without actually adding functionality)
-            if not hasattr(self, "dummyTimeField"):
-                self.dummyTimeField = NSTextField.alloc().initWithFrame_(NSMakeRect(width - 150, filterY + 2, 80, 24))
-                self.dummyTimeField.setPlaceholderString_("00:00:00")
-                self.dummyTimeField.setAlignment_(2) # Center
-                self.window.contentView().addSubview_(self.dummyTimeField)
-                
-                self.dummyAddBtn = NSButton.alloc().initWithFrame_(NSMakeRect(width - 60, filterY + 2, 40, 24))
-                self.dummyAddBtn.setTitle_("+")
-                self.dummyAddBtn.setBezelStyle_(NSBezelStyleRounded)
-                self.window.contentView().addSubview_(self.dummyAddBtn)
-            else:
-                self.dummyTimeField.setFrame_(NSMakeRect(width - 150, filterY + 2, 80, 24))
-                self.dummyAddBtn.setFrame_(NSMakeRect(width - 60, filterY + 2, 40, 24))
+
 
             if hasattr(self, "statisticsBtn"):
                 self.statisticsBtn.setFrame_(NSMakeRect(20, filterY - 30, 120, 24))
@@ -1605,7 +1592,7 @@ class TimeTrackerWindowController(NSObject):
             paidBtn.setWantsLayer_(True)
             paidBtn.layer().setCornerRadius_(9)
             paidBtn.layer().setBackgroundColor_(
-                NSColor.colorWithWhite_alpha_(0.95, 0.7).CGColor()
+                None
             )
             container.addSubview_(paidBtn)
             NSLog(f"=== Paid button added ===")
@@ -1630,7 +1617,7 @@ class TimeTrackerWindowController(NSObject):
             editBtn.setWantsLayer_(True)
             editBtn.layer().setCornerRadius_(9)
             editBtn.layer().setBackgroundColor_(
-                NSColor.colorWithWhite_alpha_(0.95, 0.7).CGColor()
+                None
             )
             container.addSubview_(editBtn)
             NSLog(f"=== Edit button added ===")
@@ -1657,7 +1644,7 @@ class TimeTrackerWindowController(NSObject):
             deleteBtn.setWantsLayer_(True)
             deleteBtn.layer().setCornerRadius_(9)  # Круглая кнопка
             deleteBtn.layer().setBackgroundColor_(
-                NSColor.colorWithWhite_alpha_(0.95, 0.7).CGColor()
+                None
             )
             container.addSubview_(deleteBtn)
             NSLog(f"=== Delete button added ===")
