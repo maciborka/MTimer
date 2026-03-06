@@ -24,6 +24,7 @@ OPTIONS = {
     "resources": resources,
     "packages": ["pkg_resources", "setuptools", "objc", "Foundation"],
     "includes": [
+        "Quartz",
         "jaraco.text",
         "jaraco.functools",
         "jaraco.context",

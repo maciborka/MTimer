@@ -320,6 +320,76 @@ class TimeTrackerWindowController(NSObject):
         # НЕ ВЫЗЫВАЕМ setupUI здесь - его вызовет AppDelegate после запуска приложения
         return self
 
+    def spawnCodeLine_(self, timer):
+        if not hasattr(self, "topBar") or self.topBar is None:
+            return
+            
+        # Анимация "дождя из кода" работает только когда запущен таймер
+        if not getattr(self, "timer_running", False):
+            return
+            
+        if len(self.topBar.subviews()) >= 15:
+            return
+            
+        import random
+        snippets = [
+            "def execute():", "import Cocoa", "class Window(NSView):", "self.timer = None",
+            "return True", "while True:", "if __name__ == '__main__':", "NSLog('Ok')",
+            "sys.exit(0)", "for i in range(10):", "yield value", "async def fetch():",
+            "await sleep(1)", "NSApp.run()", "UIFont.systemFont()", "SELECT * FROM db;",
+            "db.commit()", "<h1>Code</h1>", "<div>Test</div>", "{'status': 200}",
+            "npm start", "git commit -m", "console.log('hi');", "std::cout << 'X';",
+            "def main():", "return False", "dict.get('id')", "01001011", "print('hello')"
+        ]
+        
+        snippet = random.choice(snippets)
+        width = self.topBar.frame().size.width
+        height = self.topBar.frame().size.height
+        
+        x = random.randint(10, max(10, int(width) - 150))
+        y = random.randint(5, max(5, int(height) - 15))
+        
+        field = NSTextField.alloc().initWithFrame_(NSMakeRect(x, y, 150, 20))
+        field.setStringValue_(snippet)
+        field.setBezeled_(False)
+        field.setDrawsBackground_(False)
+        field.setEditable_(False)
+        field.setSelectable_(False)
+        field.setFont_(NSFont.monospacedSystemFontOfSize_weight_(11, -0.5))
+        field.setTextColor_(NSColor.colorWithWhite_alpha_(1.0, 0.25))
+        
+        field.setWantsLayer_(True)
+        self.topBar.addSubview_(field)
+        
+        try:
+            from Quartz import CABasicAnimation, CAMediaTimingFunction
+            # Плавное движение вверх
+            animY = CABasicAnimation.animationWithKeyPath_("position.y")
+            animY.setByValue_(15.0)
+            animY.setDuration_(3.0)
+            
+            # Плавное исчезновение
+            animAlpha = CABasicAnimation.animationWithKeyPath_("opacity")
+            animAlpha.setFromValue_(1.0)
+            animAlpha.setToValue_(0.0)
+            animAlpha.setDuration_(3.0)
+            animAlpha.setTimingFunction_(CAMediaTimingFunction.functionWithName_("easeIn"))
+            
+            field.layer().setOpacity_(0.0)
+            field.layer().addAnimation_forKey_(animY, "moveUp")
+            field.layer().addAnimation_forKey_(animAlpha, "fadeOut")
+        except Exception:
+            pass
+            
+        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            3.0, self, objc.selector(self.removeCodeLine_, signature=b"v@:@"), field, False
+        )
+
+    def removeCodeLine_(self, timer):
+        field = timer.userInfo()
+        if field:
+            field.removeFromSuperview()
+
     def setupUI(self):
         print("[Window] === setupUI: Starting for main_window ===")
 
@@ -424,6 +494,11 @@ class TimeTrackerWindowController(NSObject):
             NSColor.colorWithSRGBRed_green_blue_alpha_(0.20, 0.52, 0.96, 1.0).CGColor()
         )
         content.addSubview_(self.topBar)
+
+        # Добавляем летящие строчки кода
+        self.code_timer_ref = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            0.6, self, objc.selector(self.spawnCodeLine_, signature=b"v@:@"), None, True
+        )
 
         self.headerTitle = NSTextField.alloc().initWithFrame_(
             NSMakeRect(
@@ -5892,10 +5967,71 @@ class AppDelegate(NSObject):
                 if os.path.exists(p):
                     img = NSImage.alloc().initWithContentsOfFile_(p)
                     if img:
+                        self.original_dock_icon = img.copy()
                         NSApp.setApplicationIconImage_(img)
                         break
         except Exception as e:
             NSLog(f"Set dock icon error: {e}")
+
+    @objc.python_method
+    def updateDockIconClock(self, secs):
+        if not hasattr(self, 'original_dock_icon') or not self.original_dock_icon:
+            return
+        
+        try:
+            if secs is None:
+                # В таймер остановлен, возвращаем оригинальную иконку
+                NSApp.setApplicationIconImage_(self.original_dock_icon)
+                return
+
+            new_img = self.original_dock_icon.copy()
+            size = new_img.size()
+            width, height = size.width, size.height
+            
+            new_img.lockFocus()
+            
+            from Cocoa import NSBezierPath, NSColor, NSGraphicsContext
+            import math
+            
+            center_x = width / 2.0
+            center_y = height / 2.0
+            
+            ctx = NSGraphicsContext.currentContext()
+            ctx.saveGraphicsState()
+            
+            # Центральная точка
+            NSColor.colorWithRed_green_blue_alpha_(0.9, 0.2, 0.2, 1.0).setFill()
+            dot = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(center_x - 12, center_y - 12, 24, 24))
+            dot.fill()
+            
+            # Длина стрелки (чуть меньше половины иконки)
+            hand_length = min(width, height) * 0.42
+            
+            # Угол в радианах. 0 секунд = 12 часов = вверх. 
+            # В CoreGraphics 0 градусов - это вправо (по оси X). Значит, верх это pi/2.
+            # Но у нас стрелка крутится по часовой, значит угол уменьшается.
+            # angle = pi/2 - (secs % 60) * (2*pi / 60)
+            angle = (math.pi / 2.0) - (secs % 60) * (2 * math.pi / 60.0)
+            
+            end_x = center_x + math.cos(angle) * hand_length
+            end_y = center_y + math.sin(angle) * hand_length
+            
+            hand = NSBezierPath.bezierPath()
+            hand.setLineWidth_(8.0)
+            hand.setLineCapStyle_(1) # NSRoundLineCapStyle
+            
+            NSColor.colorWithRed_green_blue_alpha_(0.9, 0.2, 0.2, 1.0).setStroke()
+            hand.moveToPoint_((center_x, center_y))
+            hand.lineToPoint_((end_x, end_y))
+            hand.stroke()
+            
+            ctx.restoreGraphicsState()
+            new_img.unlockFocus()
+            
+            NSApp.setApplicationIconImage_(new_img)
+        except Exception as e:
+            NSLog(f"Update dock icon animation error: {e}")
+
 
     @objc.python_method
     def _setWindowIcon(self, window):
@@ -6176,23 +6312,29 @@ class AppDelegate(NSObject):
     def updateStatusItem(self):
         try:
             button = self.statusItem.button() if hasattr(self, "statusItem") else None
-            if not button:
-                return
-            if (
+            is_timer_running = (
                 getattr(self.controller, "timer_running", False)
                 and getattr(self.controller, "start_time", None) is not None
-            ):
+            )
+            
+            if is_timer_running:
                 secs = int(
                     (datetime.now() - self.controller.start_time).total_seconds()
                 )
-                title = self.controller.formatDuration(secs)
-                button.setTitle_(title)
-                if hasattr(self, "toggleItem") and self.toggleItem is not None:
-                    self.toggleItem.setTitle_(t("stop"))
+                if button:
+                    title = self.controller.formatDuration(secs)
+                    button.setTitle_(title)
+                    if hasattr(self, "toggleItem") and self.toggleItem is not None:
+                        self.toggleItem.setTitle_(t("stop"))
+                # Анимируем стрелку в Доке
+                self.updateDockIconClock(secs)
             else:
-                button.setTitle_("⏱")
-                if hasattr(self, "toggleItem") and self.toggleItem is not None:
-                    self.toggleItem.setTitle_(t("start"))
+                if button:
+                    button.setTitle_("⏱")
+                    if hasattr(self, "toggleItem") and self.toggleItem is not None:
+                        self.toggleItem.setTitle_(t("start"))
+                # Возвращаем обычную иконку
+                self.updateDockIconClock(None)
 
             # Обновляем список последних задач при каждом обновлении статус-бара
             try:
