@@ -5956,22 +5956,76 @@ class AppDelegate(NSObject):
             traceback.print_exc()
 
     @objc.python_method
+    def _createBaseClockFace(self):
+        from Cocoa import NSImage, NSSize, NSGraphicsContext, NSColor, NSBezierPath, NSMakeRect
+        import math
+
+        size = NSSize(512, 512)
+        img = NSImage.alloc().initWithSize_(size)
+        img.lockFocus()
+        ctx = NSGraphicsContext.currentContext()
+        ctx.saveGraphicsState()
+
+        center_x, center_y = 256.0, 256.0
+        radius = 240.0
+
+        # Draw dark modern circular background
+        NSColor.colorWithSRGBRed_green_blue_alpha_(0.12, 0.16, 0.22, 1.0).setFill()
+        bg_path = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(center_x - radius, center_y - radius, radius * 2, radius * 2))
+        bg_path.fill()
+
+        # Draw border profile
+        NSColor.colorWithSRGBRed_green_blue_alpha_(0.20, 0.52, 0.96, 0.8).setStroke()
+        bg_path.setLineWidth_(14.0)
+        bg_path.stroke()
+
+        # Draw hour/minute marks
+        for i in range(60):
+            angle = (math.pi / 2.0) - i * (2 * math.pi / 60.0)
+            is_hour = (i % 5 == 0)
+            
+            tick_len = 28.0 if is_hour else 12.0
+            tick_width = 8.0 if is_hour else 4.0
+            
+            start_x = center_x + math.cos(angle) * (radius - 18)
+            start_y = center_y + math.sin(angle) * (radius - 18)
+            end_x = center_x + math.cos(angle) * (radius - 18 - tick_len)
+            end_y = center_y + math.sin(angle) * (radius - 18 - tick_len)
+            
+            tick = NSBezierPath.bezierPath()
+            tick.setLineWidth_(tick_width)
+            tick.setLineCapStyle_(1) # NSRoundLineCapStyle
+            
+            if is_hour:
+                NSColor.colorWithWhite_alpha_(0.9, 1.0).setStroke()
+            else:
+                NSColor.colorWithWhite_alpha_(0.6, 1.0).setStroke()
+                
+            tick.moveToPoint_((start_x, start_y))
+            tick.lineToPoint_((end_x, end_y))
+            tick.stroke()
+
+        ctx.restoreGraphicsState()
+        img.unlockFocus()
+        return img
+
+    @objc.python_method
     def _setDockIcon(self):
         try:
-            base = _get_base_dir()
-            candidates = [
-                os.path.join(base, "assets", "app_icon.icns"),
-                os.path.join(base, "assets", "app_icon.png"),
-            ]
-            for p in candidates:
-                if os.path.exists(p):
-                    img = NSImage.alloc().initWithContentsOfFile_(p)
-                    if img:
-                        self.original_dock_icon = img.copy()
-                        NSApp.setApplicationIconImage_(img)
-                        break
+            self.original_dock_icon = self._createBaseClockFace()
+            NSApp.setApplicationIconImage_(self.original_dock_icon)
+            
+            # Start a continuous timer for the dock clock
+            from Cocoa import NSTimer
+            self.dock_timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                1.0, self, objc.selector(self._tickDockClock_, signature=b"v@:@"), None, True
+            )
         except Exception as e:
             NSLog(f"Set dock icon error: {e}")
+
+    def _tickDockClock_(self, timer):
+        is_running = getattr(self.controller, "timer_running", False)
+        self.updateDockIconClock(is_running)
 
     @objc.python_method
     def updateDockIconClock(self, is_timer_running):
@@ -5979,18 +6033,13 @@ class AppDelegate(NSObject):
             return
         
         try:
-            if not is_timer_running:
-                # В таймер остановлен, возвращаем оригинальную иконку
-                NSApp.setApplicationIconImage_(self.original_dock_icon)
-                return
-
             new_img = self.original_dock_icon.copy()
             size = new_img.size()
             width, height = size.width, size.height
             
             new_img.lockFocus()
             
-            from Cocoa import NSBezierPath, NSColor, NSGraphicsContext
+            from Cocoa import NSBezierPath, NSColor, NSGraphicsContext, NSMakeRect
             import math
             from datetime import datetime
             
@@ -6013,34 +6062,42 @@ class AppDelegate(NSObject):
             second_angle = (math.pi / 2.0) - seconds * (2 * math.pi / 60.0)
             
             # Размеры стрелок
-            hour_length = min(width, height) * 0.22
-            minute_length = min(width, height) * 0.35
+            hour_length = min(width, height) * 0.24
+            minute_length = min(width, height) * 0.36
             second_length = min(width, height) * 0.42
             
-            def draw_hand(angle, length, stroke_width, color):
+            def draw_hand(angle, length, stroke_width, color, tail=0):
                 end_x = center_x + math.cos(angle) * length
                 end_y = center_y + math.sin(angle) * length
+                start_x = center_x - math.cos(angle) * tail
+                start_y = center_y - math.sin(angle) * tail
+                
                 hand = NSBezierPath.bezierPath()
                 hand.setLineWidth_(stroke_width)
                 hand.setLineCapStyle_(1) # NSRoundLineCapStyle
                 color.setStroke()
-                hand.moveToPoint_((center_x, center_y))
+                hand.moveToPoint_((start_x, start_y))
                 hand.lineToPoint_((end_x, end_y))
                 hand.stroke()
             
-            # Рисуем часовую стрелку
-            draw_hand(hour_angle, hour_length, 12.0, NSColor.whiteColor())
+            # Рисуем часовую стрелку всегда
+            draw_hand(hour_angle, hour_length, 16.0, NSColor.whiteColor(), tail=25.0)
             
-            # Рисуем минутную стрелку
-            draw_hand(minute_angle, minute_length, 8.0, NSColor.whiteColor())
+            # Рисуем минутную стрелку всегда
+            draw_hand(minute_angle, minute_length, 12.0, NSColor.colorWithWhite_alpha_(0.9, 1.0), tail=30.0)
             
-            # Рисуем секундную стрелку
-            draw_hand(second_angle, second_length, 4.0, NSColor.colorWithRed_green_blue_alpha_(0.9, 0.2, 0.2, 1.0))
-            
+            # Рисуем секундную стрелку ТОЛЬКО когда таймер запущен
+            if is_timer_running:
+                draw_hand(second_angle, second_length, 6.0, NSColor.colorWithSRGBRed_green_blue_alpha_(1.0, 0.33, 0.55, 1.0), tail=40.0)
+                
             # Центральная точка
-            NSColor.colorWithRed_green_blue_alpha_(0.9, 0.2, 0.2, 1.0).setFill()
-            dot = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(center_x - 8, center_y - 8, 16, 16))
+            NSColor.colorWithWhite_alpha_(0.1, 1.0).setFill()
+            dot = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(center_x - 14, center_y - 14, 28, 28))
             dot.fill()
+            
+            NSColor.colorWithSRGBRed_green_blue_alpha_(1.0, 0.33, 0.55, 1.0).setStroke()
+            dot.setLineWidth_(4.0)
+            dot.stroke()
             
             ctx.restoreGraphicsState()
             new_img.unlockFocus()
@@ -6343,15 +6400,11 @@ class AppDelegate(NSObject):
                     button.setTitle_(title)
                     if hasattr(self, "toggleItem") and self.toggleItem is not None:
                         self.toggleItem.setTitle_(t("stop"))
-                # Анимируем стрелки в Доке
-                self.updateDockIconClock(True)
             else:
                 if button:
                     button.setTitle_("⏱")
                     if hasattr(self, "toggleItem") and self.toggleItem is not None:
                         self.toggleItem.setTitle_(t("start"))
-                # Возвращаем обычную иконку
-                self.updateDockIconClock(False)
 
             # Обновляем список последних задач при каждом обновлении статус-бара
             try:
