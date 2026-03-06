@@ -5974,12 +5974,12 @@ class AppDelegate(NSObject):
             NSLog(f"Set dock icon error: {e}")
 
     @objc.python_method
-    def updateDockIconClock(self, secs):
+    def updateDockIconClock(self, is_timer_running):
         if not hasattr(self, 'original_dock_icon') or not self.original_dock_icon:
             return
         
         try:
-            if secs is None:
+            if not is_timer_running:
                 # В таймер остановлен, возвращаем оригинальную иконку
                 NSApp.setApplicationIconImage_(self.original_dock_icon)
                 return
@@ -5992,6 +5992,7 @@ class AppDelegate(NSObject):
             
             from Cocoa import NSBezierPath, NSColor, NSGraphicsContext
             import math
+            from datetime import datetime
             
             center_x = width / 2.0
             center_y = height / 2.0
@@ -5999,31 +6000,47 @@ class AppDelegate(NSObject):
             ctx = NSGraphicsContext.currentContext()
             ctx.saveGraphicsState()
             
+            # Получаем реальное время
+            now = datetime.now()
+            hours = now.hour % 12
+            minutes = now.minute
+            seconds = now.second
+            
+            # Углы для стрелок (0 = 12 часов = вверх, то есть pi/2)
+            # Вращение по часовой стрелке означает уменьшение угла в Core Graphics
+            hour_angle = (math.pi / 2.0) - (hours + minutes / 60.0) * (2 * math.pi / 12.0)
+            minute_angle = (math.pi / 2.0) - (minutes + seconds / 60.0) * (2 * math.pi / 60.0)
+            second_angle = (math.pi / 2.0) - seconds * (2 * math.pi / 60.0)
+            
+            # Размеры стрелок
+            hour_length = min(width, height) * 0.22
+            minute_length = min(width, height) * 0.35
+            second_length = min(width, height) * 0.42
+            
+            def draw_hand(angle, length, stroke_width, color):
+                end_x = center_x + math.cos(angle) * length
+                end_y = center_y + math.sin(angle) * length
+                hand = NSBezierPath.bezierPath()
+                hand.setLineWidth_(stroke_width)
+                hand.setLineCapStyle_(1) # NSRoundLineCapStyle
+                color.setStroke()
+                hand.moveToPoint_((center_x, center_y))
+                hand.lineToPoint_((end_x, end_y))
+                hand.stroke()
+            
+            # Рисуем часовую стрелку
+            draw_hand(hour_angle, hour_length, 12.0, NSColor.whiteColor())
+            
+            # Рисуем минутную стрелку
+            draw_hand(minute_angle, minute_length, 8.0, NSColor.whiteColor())
+            
+            # Рисуем секундную стрелку
+            draw_hand(second_angle, second_length, 4.0, NSColor.colorWithRed_green_blue_alpha_(0.9, 0.2, 0.2, 1.0))
+            
             # Центральная точка
             NSColor.colorWithRed_green_blue_alpha_(0.9, 0.2, 0.2, 1.0).setFill()
-            dot = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(center_x - 12, center_y - 12, 24, 24))
+            dot = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(center_x - 8, center_y - 8, 16, 16))
             dot.fill()
-            
-            # Длина стрелки (чуть меньше половины иконки)
-            hand_length = min(width, height) * 0.42
-            
-            # Угол в радианах. 0 секунд = 12 часов = вверх. 
-            # В CoreGraphics 0 градусов - это вправо (по оси X). Значит, верх это pi/2.
-            # Но у нас стрелка крутится по часовой, значит угол уменьшается.
-            # angle = pi/2 - (secs % 60) * (2*pi / 60)
-            angle = (math.pi / 2.0) - (secs % 60) * (2 * math.pi / 60.0)
-            
-            end_x = center_x + math.cos(angle) * hand_length
-            end_y = center_y + math.sin(angle) * hand_length
-            
-            hand = NSBezierPath.bezierPath()
-            hand.setLineWidth_(8.0)
-            hand.setLineCapStyle_(1) # NSRoundLineCapStyle
-            
-            NSColor.colorWithRed_green_blue_alpha_(0.9, 0.2, 0.2, 1.0).setStroke()
-            hand.moveToPoint_((center_x, center_y))
-            hand.lineToPoint_((end_x, end_y))
-            hand.stroke()
             
             ctx.restoreGraphicsState()
             new_img.unlockFocus()
@@ -6326,15 +6343,15 @@ class AppDelegate(NSObject):
                     button.setTitle_(title)
                     if hasattr(self, "toggleItem") and self.toggleItem is not None:
                         self.toggleItem.setTitle_(t("stop"))
-                # Анимируем стрелку в Доке
-                self.updateDockIconClock(secs)
+                # Анимируем стрелки в Доке
+                self.updateDockIconClock(True)
             else:
                 if button:
                     button.setTitle_("⏱")
                     if hasattr(self, "toggleItem") and self.toggleItem is not None:
                         self.toggleItem.setTitle_(t("start"))
                 # Возвращаем обычную иконку
-                self.updateDockIconClock(None)
+                self.updateDockIconClock(False)
 
             # Обновляем список последних задач при каждом обновлении статус-бара
             try:
